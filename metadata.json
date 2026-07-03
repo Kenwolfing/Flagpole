@@ -1,0 +1,6 @@
+{
+  "name": "Progress Tracker",
+  "description": "An interactive progress tracker with custom goals, flexible limits, and highly customizable tracking options for habits and long-term goals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
