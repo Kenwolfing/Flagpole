@@ -14,5 +14,13 @@ data class GoalGroup(
     val applyBg: Boolean = true,
     val outlineMainColor: Boolean = false,
     val parentGroupId: Int = 0,
+    val cardBorderHex: String = "NONE",
+    val displayType: Int = 0,
     val createdAt: Long = System.currentTimeMillis()
+)
+
+data class GroupGoalStats(
+    val parentGroupId: Int,
+    val totalGoals: Int,
+    val completedGoals: Int
 )

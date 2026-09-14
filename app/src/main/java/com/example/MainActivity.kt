@@ -6,6 +6,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import com.example.ui.DashboardScreen
 import com.example.ui.theme.MyApplicationTheme
@@ -18,7 +20,8 @@ class MainActivity : ComponentActivity() {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
     setContent {
-      MyApplicationTheme {
+      val isDark by viewModel.isDarkTheme.collectAsState()
+      MyApplicationTheme(darkTheme = isDark) {
         DashboardScreen(
           viewModel = viewModel,
           modifier = Modifier.fillMaxSize()

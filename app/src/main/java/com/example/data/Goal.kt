@@ -18,5 +18,16 @@ data class Goal(
     val hidePassedMilestones: Boolean = false,
     val showRemainingCount: Boolean = true,
     val parentGroupId: Int = 0,
+    val progressType: Int = 0, // 0 = bar, 1 = meter, 2 = big dots
+    val meterThickness: Float = 14f,
+    val dotsPerRow: Int = 8,
+    val cardBorderHex: String = "NONE",
+    val unit: String = "pts",
+    val statsEnabled: Boolean = true,
+    val streaksEnabled: Boolean = false,
+    val pointTrackingEnabled: Boolean = true,
+    val statsVisualType: Int = 0, // 0 = bar, 1 = graph/line
+    val showHighlights: Boolean = true,
+    val groupValue: Double = 1.0,
     val createdAt: Long = System.currentTimeMillis()
 )

@@ -12,5 +12,6 @@ data class Note(
     val secondaryColorHex: String = "DEFAULT",
     val imageUri: String? = null,
     val parentGroupId: Int = 0,
+    val cardBorderHex: String = "NONE",
     val createdAt: Long = System.currentTimeMillis()
 )
