@@ -40,7 +40,19 @@ val MIGRATION_8_9 = object : Migration(8, 9) {
     }
 }
 
-@Database(entities = [Goal::class, Note::class, GoalGroup::class, GoalLog::class], version = 10, exportSchema = false)
+val MIGRATION_10_11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE goals ADD COLUMN allowGroupPointsOverflow INTEGER NOT NULL DEFAULT 1")
+    }
+}
+
+val MIGRATION_11_12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE goals ADD COLUMN showMilestoneProgressBar INTEGER NOT NULL DEFAULT 1")
+    }
+}
+
+@Database(entities = [Goal::class, Note::class, GoalGroup::class, GoalLog::class], version = 12, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun goalDao(): GoalDao
 
@@ -55,7 +67,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "progress_tracker_db"
                 )
-                .addMigrations(MIGRATION_5_6, MIGRATION_7_8, MIGRATION_8_9)
+                .addMigrations(MIGRATION_5_6, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_10_11, MIGRATION_11_12)
                 .fallbackToDestructiveMigration()
                 .build()
                 INSTANCE = instance

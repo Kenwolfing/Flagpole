@@ -66,12 +66,15 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
@@ -93,7 +96,7 @@ import com.example.viewmodel.GoalViewModel
 // Milestone models for handling local UI parsing
 data class Milestone(
     val value: Int,
-    val type: String // "dot", "star", "line"
+    val type: String // "flag", "star", "heart", "diamond", "line", "dot", "danger", "cross"
 )
 
 fun parseMilestones(str: String): List<Milestone> {
@@ -103,10 +106,171 @@ fun parseMilestones(str: String): List<Milestone> {
         if (subparts.size == 2) {
             val value = subparts[0].toIntOrNull()
             if (value != null) {
-                Milestone(value, subparts[1])
+                Milestone(value, subparts[1].lowercase())
             } else null
         } else null
     }.sortedBy { it.value }
+}
+
+fun getMilestoneTypePriority(type: String): Int {
+    return when (type.lowercase()) {
+        "flag" -> 1
+        "star" -> 2
+        "heart" -> 3
+        "diamond" -> 4
+        "line" -> 5
+        "dot" -> 6
+        "danger" -> 7
+        "cross" -> 8
+        else -> 9
+    }
+}
+
+fun getMilestoneTypeLabel(type: String): String {
+    return when (type.lowercase()) {
+        "flag" -> "FLAGS"
+        "star" -> "STARS"
+        "heart" -> "HEARTS"
+        "diamond" -> "DIAMONDS"
+        "line" -> "LINES"
+        "dot" -> "DOTS"
+        "danger" -> "DANGER"
+        "cross" -> "CROSS"
+        else -> type.uppercase() + "S"
+    }
+}
+
+@Composable
+fun MilestoneIconDisplay(
+    type: String,
+    tint: Color,
+    modifier: Modifier = Modifier,
+    size: androidx.compose.ui.unit.Dp = 16.dp
+) {
+    when (type.lowercase()) {
+        "flag" -> Icon(Icons.Filled.Flag, contentDescription = "Flag", tint = tint, modifier = modifier.size(size))
+        "star" -> Icon(Icons.Filled.Star, contentDescription = "Star", tint = tint, modifier = modifier.size(size))
+        "heart" -> Icon(Icons.Filled.Favorite, contentDescription = "Heart", tint = tint, modifier = modifier.size(size))
+        "diamond" -> Box(
+            modifier = modifier
+                .size((size.value * 0.707f).dp.coerceAtLeast(3.dp))
+                .rotate(45f)
+                .clip(RoundedCornerShape(0.5.dp))
+                .background(tint)
+        )
+        "danger" -> Icon(Icons.Filled.Warning, contentDescription = "Danger", tint = tint, modifier = modifier.size(size))
+        "cross" -> Icon(Icons.Filled.Close, contentDescription = "Cross", tint = tint, modifier = modifier.size(size))
+        "line" -> Box(
+            modifier = modifier
+                .width((size.value * 0.25f).dp.coerceAtLeast(1.5.dp))
+                .height(size)
+                .clip(RoundedCornerShape(1.dp))
+                .background(tint)
+        )
+        else -> Box( // "dot"
+            modifier = modifier
+                .size((size.value * 0.75f).dp.coerceAtLeast(3.5.dp))
+                .clip(CircleShape)
+                .background(tint)
+        )
+    }
+}
+
+fun getMilestonePriority(type: String): Int = getMilestoneTypePriority(type)
+
+fun generateIncrementalMilestones(
+    count: Int,
+    startFrom: Int,
+    increaseBy: Int,
+    weightPercent: Float
+): List<Int> {
+    val clampedCount = count.coerceIn(1, 100)
+    val result = mutableListOf<Int>()
+    val acceleration = (weightPercent / 100f) * (increaseBy * 0.2f)
+    var current = startFrom.toDouble()
+    var currentStep = increaseBy.toDouble()
+
+    for (i in 0 until clampedCount) {
+        if (i == 0) {
+            current = startFrom.toDouble()
+        } else {
+            current += currentStep
+            currentStep = (currentStep + acceleration).coerceAtLeast(1.0)
+        }
+        result.add(current.toInt())
+    }
+    return result
+}
+
+fun generateIncrementalMilestones(
+    count: Int,
+    startFrom: Int,
+    increaseBy: Int,
+    eachIncreaseBy: Int
+): List<Int> {
+    val clampedCount = count.coerceIn(1, 100)
+    val result = mutableListOf<Int>()
+    var current = startFrom
+    var currentStep = increaseBy
+    for (i in 0 until clampedCount) {
+        if (i == 0) {
+            current = startFrom
+        } else {
+            current += currentStep
+            currentStep += eachIncreaseBy
+        }
+        result.add(current)
+    }
+    return result
+}
+
+fun generateRangeMilestones(
+    count: Int,
+    from: Int,
+    to: Int,
+    weightPercent: Float
+): List<Int> = generateInRangeMilestones(from, to, count, weightPercent)
+
+fun generateInRangeMilestones(
+    from: Int,
+    to: Int,
+    count: Int,
+    weightPercent: Float
+): List<Int> {
+    val clampedCount = count.coerceIn(1, 100)
+    if (clampedCount <= 0) return emptyList()
+    val minVal = minOf(from, to)
+    val maxVal = maxOf(from, to)
+    val distance = (maxVal - minVal).toDouble()
+    if (distance <= 0) return List(clampedCount) { minVal }
+
+    val w = (weightPercent / 100f).coerceIn(-0.999f, 0.999f)
+
+    if (w == 0f) {
+        val step = distance / (clampedCount + 1)
+        return (1..clampedCount).map { i ->
+            kotlin.math.floor(minVal + i * step).toInt()
+        }
+    } else if (w > 0f) {
+        val result = mutableListOf<Int>()
+        var current = minVal.toDouble()
+        for (i in 0 until clampedCount) {
+            val next = current + w * (maxVal - current)
+            result.add(kotlin.math.floor(next).toInt())
+            current = next
+        }
+        return result
+    } else {
+        val wAbs = kotlin.math.abs(w).toDouble()
+        val reversedResult = mutableListOf<Int>()
+        var current = maxVal.toDouble()
+        for (i in 0 until clampedCount) {
+            val prev = current - wAbs * (current - minVal)
+            reversedResult.add(kotlin.math.floor(prev).toInt())
+            current = prev
+        }
+        return reversedResult.reversed()
+    }
 }
 
 @Composable
@@ -232,6 +396,7 @@ fun DashboardScreen(
     var showEditGroupDialog by remember { mutableStateOf(false) }
     var editTargetGroup by remember { mutableStateOf<GoalGroup?>(null) }
     var resetTargetGoal by remember { mutableStateOf<Goal?>(null) }
+    var completeTargetGoal by remember { mutableStateOf<Goal?>(null) }
     var resetTargetGroup by remember { mutableStateOf<GoalGroup?>(null) }
     var groupStatsTarget by remember { mutableStateOf<GoalGroup?>(null) }
 
@@ -264,19 +429,15 @@ fun DashboardScreen(
         }
     )
 
+    var pendingImportUri by remember { mutableStateOf<Uri?>(null) }
+    var showImportBackupDialog by remember { mutableStateOf(false) }
+
     val importBackupLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument(),
         onResult = { uri ->
             if (uri != null) {
-                viewModel.importBackup(
-                    uri = uri,
-                    onSuccess = {
-                        Toast.makeText(backupContext, "Backup restored successfully!", Toast.LENGTH_LONG).show()
-                    },
-                    onError = { err ->
-                        Toast.makeText(backupContext, "Restore failed: $err", Toast.LENGTH_LONG).show()
-                    }
-                )
+                pendingImportUri = uri
+                showImportBackupDialog = true
             }
         }
     )
@@ -411,23 +572,35 @@ fun DashboardScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Column {
-                            Text(
-                                text = "Flagpole",
-                                style = MaterialTheme.typography.headlineLarge.copy(
-                                    fontWeight = FontWeight.Normal,
-                                    color = if (isDark) Color.White else Color(0xFF1D1B20),
-                                    fontSize = 32.sp
-                                )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_flagpole_logo_1783178411745),
+                                contentDescription = "Flagpole Logo",
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .clickable { showCreditsDialog = true },
+                                contentScale = ContentScale.Crop
                             )
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(
-                                text = "Track your daily evolution",
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    color = if (isDark) Color(0xFFCAC4D0) else Color(0xFF49454F),
-                                    fontSize = 14.sp
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text(
+                                    text = "Flagpole",
+                                    style = MaterialTheme.typography.headlineLarge.copy(
+                                        fontWeight = FontWeight.Normal,
+                                        color = if (isDark) Color.White else Color(0xFF1D1B20),
+                                        fontSize = 32.sp
+                                    )
                                 )
-                            )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Track your daily evolution",
+                                    style = MaterialTheme.typography.bodyMedium.copy(
+                                        color = if (isDark) Color(0xFFCAC4D0) else Color(0xFF49454F),
+                                        fontSize = 14.sp
+                                    )
+                                )
+                            }
                         }
 
                         // Decorative miniature preview and toggle sorting button
@@ -469,19 +642,6 @@ fun DashboardScreen(
                                     } else {
                                         if (isDark) Color.White else Color(0xFF1D1B20)
                                     }
-                                )
-                            }
-
-                            Card(
-                                modifier = Modifier.size(60.dp),
-                                shape = RoundedCornerShape(16.dp),
-                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                            ) {
-                                Image(
-                                    painter = painterResource(id = R.drawable.img_hero_banner_1783079996500),
-                                    contentDescription = null,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop
                                 )
                             }
                         }
@@ -734,7 +894,7 @@ fun DashboardScreen(
                                                     Toast.makeText(context, "Copied Goal! Tap 'Paste Goal' to place at top", Toast.LENGTH_SHORT).show()
                                                 },
                                                 onReset = { resetTargetGoal = item.goal },
-                                                onComplete = { viewModel.completeGoal(item.goal) },
+                                                onComplete = { completeTargetGoal = item.goal },
                                                 onDelete = { viewModel.deleteGoal(item.goal) },
                                                 onInfoClick = { focusedGoalForStats = item.goal },
                                                 outlineColorHex = if (item.goal.cardBorderHex != "NONE") item.goal.cardBorderHex else outlineColor,
@@ -1016,7 +1176,7 @@ fun DashboardScreen(
                                                     Toast.makeText(context, "Copied Goal! Tap 'Paste Goal' to place at top", Toast.LENGTH_SHORT).show()
                                                 },
                                                 onReset = { resetTargetGoal = item.goal },
-                                                onComplete = { viewModel.completeGoal(item.goal) },
+                                                onComplete = { completeTargetGoal = item.goal },
                                                 onDelete = { viewModel.deleteGoal(item.goal) },
                                                 onInfoClick = { focusedGoalForStats = item.goal },
                                                 outlineColorHex = if (item.goal.cardBorderHex != "NONE") item.goal.cardBorderHex else outlineColor,
@@ -1618,10 +1778,13 @@ fun DashboardScreen(
                                     )
                                 )
                             }
-                            Icon(
-                                imageVector = Icons.Default.Info,
+                            Image(
+                                painter = painterResource(id = R.drawable.ic_flagpole_logo_1783178411745),
                                 contentDescription = "Credits",
-                                tint = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4)
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop
                             )
                         }
                     }
@@ -1759,7 +1922,7 @@ fun DashboardScreen(
             val context = androidx.compose.ui.platform.LocalContext.current
             SnapshotDialog(
                 onDismiss = { showSnapshotDialog = false },
-                onCapture = { quality ->
+                onCapture = { quality, splitParts ->
                     showSnapshotDialog = false
                     isGeneratingPng = true
                     
@@ -2071,7 +2234,7 @@ fun DashboardScreen(
                                         val currentTotalPoints = childGoals.sumOf {
                                             if (it.maxPoints > 0) {
                                                 val fraction = it.currentPoints.toDouble() / it.maxPoints.toDouble()
-                                                if (it.allowExceed) fraction * it.groupValue else minOf(it.groupValue, fraction * it.groupValue)
+                                                if (it.allowGroupPointsOverflow) fraction * it.groupValue else minOf(it.groupValue, fraction * it.groupValue)
                                             } else 0.0
                                         }
 
@@ -2274,8 +2437,7 @@ fun DashboardScreen(
                                                 canvas.drawText(maxPointsStr, textX + curW, progressY + 18f * scale, maxPointsPaint)
                                                 
                                                 val pct = if (g.maxPoints > 0) {
-                                                    if (g.allowExceed) ((g.currentPoints.toFloat() / g.maxPoints.toFloat()) * 100).toInt()
-                                                    else kotlin.math.min(100, ((g.currentPoints.toFloat() / g.maxPoints.toFloat()) * 100).toInt())
+                                                    ((g.currentPoints.toFloat() / g.maxPoints.toFloat()) * 100).toInt()
                                                 } else 0
                                                 canvas.drawText(pct.toString() + "%", itemX + currentCardWidth - cardPadding, progressY + 18f * scale, percentPaint)
                                                 
@@ -2308,7 +2470,7 @@ fun DashboardScreen(
                                                 val maxPointsStr = "/ " + g.maxPoints.toString() + " " + g.unit
                                                 canvas.drawText(maxPointsStr, textX + curW, progressY + 18f * scale, maxPointsPaint)
                                                 
-                                                val pct = if (g.maxPoints > 0) kotlin.math.min(100, ((g.currentPoints.toFloat() / g.maxPoints.toFloat()) * 100).toInt()) else 0
+                                                val pct = if (g.maxPoints > 0) ((g.currentPoints.toFloat() / g.maxPoints.toFloat()) * 100).toInt() else 0
                                                 canvas.drawText(pct.toString() + "%", itemX + currentCardWidth - cardPadding, progressY + 18f * scale, percentPaint)
                                                 
                                                 // Draw dots grid below the metrics row
@@ -2423,7 +2585,7 @@ fun DashboardScreen(
                                         val currentTotalPoints = childGoals.sumOf {
                                             if (it.maxPoints > 0) {
                                                 val fraction = it.currentPoints.toDouble() / it.maxPoints.toDouble()
-                                                if (it.allowExceed) fraction * it.groupValue else minOf(it.groupValue, fraction * it.groupValue)
+                                                if (it.allowGroupPointsOverflow) fraction * it.groupValue else minOf(it.groupValue, fraction * it.groupValue)
                                             } else 0.0
                                         }
 
@@ -2474,14 +2636,34 @@ fun DashboardScreen(
                                 iconBitmap.recycle()
                             }
                             
-                            val filename = "Flagpole_Document_${System.currentTimeMillis()}.png"
-                            val uri = saveBitmapToStorage(context, finalBitmap, filename)
+                            val timestamp = System.currentTimeMillis()
+                            val savedCount: Int
+                            if (splitParts > 1) {
+                                var successfulSlices = 0
+                                val partHeight = finalBitmapHeight / splitParts
+                                for (part in 0 until splitParts) {
+                                    val top = part * partHeight
+                                    val bottom = if (part == splitParts - 1) finalBitmapHeight else (part + 1) * partHeight
+                                    val h = (bottom - top).coerceAtLeast(1)
+                                    val partBitmap = android.graphics.Bitmap.createBitmap(finalBitmap, 0, top, baseWidth, h)
+                                    val partFilename = "Flagpole_Document_${timestamp}_part_${part + 1}_of_${splitParts}.png"
+                                    val partUri = saveBitmapToStorage(context, partBitmap, partFilename)
+                                    if (partUri != null) successfulSlices++
+                                    partBitmap.recycle()
+                                }
+                                savedCount = successfulSlices
+                            } else {
+                                val filename = "Flagpole_Document_${timestamp}.png"
+                                val uri = saveBitmapToStorage(context, finalBitmap, filename)
+                                savedCount = if (uri != null) 1 else 0
+                            }
                             finalBitmap.recycle()
                             
                             withContext(kotlinx.coroutines.Dispatchers.Main) {
                                 isGeneratingPng = false
-                                if (uri != null) {
-                                    android.widget.Toast.makeText(context, "PNG saved to Pictures/Flagpole!", android.widget.Toast.LENGTH_LONG).show()
+                                if (savedCount > 0) {
+                                    val msg = if (splitParts > 1) "$savedCount of $splitParts PNGs saved to Pictures/Flagpole!" else "PNG saved to Pictures/Flagpole!"
+                                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
                                 } else {
                                     android.widget.Toast.makeText(context, "Failed to save PNG.", android.widget.Toast.LENGTH_SHORT).show()
                                 }
@@ -2506,15 +2688,127 @@ fun DashboardScreen(
             )
         }
 
+        // Import Backup Dialog
+        if (showImportBackupDialog && pendingImportUri != null) {
+            val importUri = pendingImportUri!!
+            AlertDialog(
+                onDismissRequest = {
+                    showImportBackupDialog = false
+                    pendingImportUri = null
+                },
+                containerColor = if (isDark) Color(0xFF1E1E24) else Color.White,
+                titleContentColor = if (isDark) Color.White else Color(0xFF1D1B20),
+                textContentColor = if (isDark) Color(0xFFCAC4D0) else Color(0xFF49454F),
+                title = {
+                    Text(
+                        text = "Import Backup",
+                        fontWeight = FontWeight.Bold
+                    )
+                },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = "Choose how you want to import this backup file:",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isDark) Color(0xFF2B2A32) else Color(0xFFF3F0F7),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showImportBackupDialog = false
+                                    pendingImportUri = null
+                                    viewModel.importBackup(
+                                        uri = importUri,
+                                        replaceAll = false,
+                                        onSuccess = {
+                                            Toast.makeText(backupContext, "Backup added on top successfully!", Toast.LENGTH_LONG).show()
+                                        },
+                                        onError = { err ->
+                                            Toast.makeText(backupContext, "Import failed: $err", Toast.LENGTH_LONG).show()
+                                        }
+                                    )
+                                }
+                                .padding(14.dp)
+                        ) {
+                            Column {
+                                Text(
+                                    text = "Add on top",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4)
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Adds the backup items alongside your current goals, notes, and groups without deleting existing data.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isDark) Color(0xFFCAC4D0) else Color(0xFF49454F)
+                                )
+                            }
+                        }
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isDark) Color(0xFF2B2A32) else Color(0xFFF3F0F7),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showImportBackupDialog = false
+                                    pendingImportUri = null
+                                    viewModel.importBackup(
+                                        uri = importUri,
+                                        replaceAll = true,
+                                        onSuccess = {
+                                            Toast.makeText(backupContext, "Backup restored successfully!", Toast.LENGTH_LONG).show()
+                                        },
+                                        onError = { err ->
+                                            Toast.makeText(backupContext, "Import failed: $err", Toast.LENGTH_LONG).show()
+                                        }
+                                    )
+                                }
+                                .padding(14.dp)
+                        ) {
+                            Column {
+                                Text(
+                                    text = "Replace all",
+                                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = if (isDark) Color(0xFFFFB4AB) else Color(0xFFBA1A1A)
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Replaces all existing data with the data from this backup file.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = if (isDark) Color(0xFFCAC4D0) else Color(0xFF49454F)
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {},
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            showImportBackupDialog = false
+                            pendingImportUri = null
+                        }
+                    ) {
+                        Text(
+                            text = "Cancel",
+                            color = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4)
+                        )
+                    }
+                }
+            )
+        }
+
         // Add New Goal Dialog
         if (showAddDialog) {
             AddGoalDialog(
                 isDark = isDark,
                 currentGroupId = currentGroupId,
                 onDismiss = { showAddDialog = false },
-                onConfirm = { title, description, current, max, allowExceed, colorHex, secondaryColorHex, milestonesStr, barBehavior, hidePassed, showRemaining, progressType, meterThickness, dotsPerRow, cardBorderHex, unit, statsEnabled, streaksEnabled, pointTrackingEnabled, statsVisualType, showHighlights, groupValue ->
+                onConfirm = { title, description, current, max, allowExceed, colorHex, secondaryColorHex, milestonesStr, barBehavior, hidePassed, showRemaining, showMilestoneProgressBar, progressType, meterThickness, dotsPerRow, cardBorderHex, unit, statsEnabled, streaksEnabled, pointTrackingEnabled, statsVisualType, showHighlights, groupValue, allowGroupPointsOverflow ->
                     viewModel.addGoal(
-                        title, description, current, max, allowExceed, colorHex, secondaryColorHex, milestonesStr, barBehavior, hidePassed, showRemaining, progressType, meterThickness, dotsPerRow, currentGroupId, cardBorderHex, unit, statsEnabled, streaksEnabled, pointTrackingEnabled, statsVisualType, showHighlights, groupValue
+                        title, description, current, max, allowExceed, colorHex, secondaryColorHex, milestonesStr, barBehavior, hidePassed, showRemaining, showMilestoneProgressBar, progressType, meterThickness, dotsPerRow, currentGroupId, cardBorderHex, unit, statsEnabled, streaksEnabled, pointTrackingEnabled, statsVisualType, showHighlights, groupValue, allowGroupPointsOverflow
                     )
                     showAddDialog = false
                 }
@@ -2610,7 +2904,7 @@ fun DashboardScreen(
                     showEditDialog = false
                     editTargetGoal = null
                 },
-                onConfirm = { title, description, current, max, allowExceed, colorHex, secondaryColorHex, milestonesStr, barBehavior, hidePassed, showRemaining, progressType, meterThickness, dotsPerRow, cardBorderHex, unit, statsEnabled, streaksEnabled, pointTrackingEnabled, statsVisualType, showHighlights, groupValue ->
+                onConfirm = { title, description, current, max, allowExceed, colorHex, secondaryColorHex, milestonesStr, barBehavior, hidePassed, showRemaining, showMilestoneProgressBar, progressType, meterThickness, dotsPerRow, cardBorderHex, unit, statsEnabled, streaksEnabled, pointTrackingEnabled, statsVisualType, showHighlights, groupValue, allowGroupPointsOverflow ->
                     val finalMax = maxOf(1, max)
                     val finalCurrent = if (!allowExceed) minOf(maxOf(0, current), finalMax) else maxOf(0, current)
                     viewModel.updateGoal(
@@ -2626,6 +2920,7 @@ fun DashboardScreen(
                             barBehavior = barBehavior,
                             hidePassedMilestones = hidePassed,
                             showRemainingCount = showRemaining,
+                            showMilestoneProgressBar = showMilestoneProgressBar,
                             progressType = progressType,
                             meterThickness = meterThickness,
                             dotsPerRow = dotsPerRow,
@@ -2636,7 +2931,8 @@ fun DashboardScreen(
                             pointTrackingEnabled = pointTrackingEnabled,
                             statsVisualType = statsVisualType,
                             showHighlights = showHighlights,
-                            groupValue = groupValue
+                            groupValue = groupValue,
+                            allowGroupPointsOverflow = allowGroupPointsOverflow
                         )
                     )
                     showEditDialog = false
@@ -2696,6 +2992,62 @@ fun DashboardScreen(
             )
         }
 
+        if (completeTargetGoal != null) {
+            val goal = completeTargetGoal!!
+            val customColor = try {
+                Color(android.graphics.Color.parseColor(goal.colorHex))
+            } catch (e: Exception) {
+                MaterialTheme.colorScheme.primary
+            }
+            AlertDialog(
+                onDismissRequest = { completeTargetGoal = null },
+                title = {
+                    Text(
+                        text = "Complete Goal?",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDark) Color.White else Color(0xFF1D1B20)
+                        )
+                    )
+                },
+                text = {
+                    Text(
+                        text = "Are you sure you want to mark '${goal.title}' as completed? Current points will be set to ${goal.maxPoints}.",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            color = if (isDark) Color.White.copy(alpha = 0.8f) else Color(0xFF49454F)
+                        )
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            viewModel.completeGoal(goal)
+                            completeTargetGoal = null
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = customColor,
+                            contentColor = if (isDark) Color.Black else Color.White
+                        ),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Complete", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = { completeTargetGoal = null }
+                    ) {
+                        Text(
+                            "Cancel",
+                            color = if (isDark) Color.White.copy(alpha = 0.7f) else Color(0xFF49454F)
+                        )
+                    }
+                },
+                containerColor = if (isDark) Color(0xFF25232A) else Color(0xFFF3EDF7),
+                shape = RoundedCornerShape(20.dp)
+            )
+        }
+
         if (resetTargetGroup != null) {
             val group = resetTargetGroup!!
             val customColor = try {
@@ -2736,6 +3088,157 @@ sealed class DotGridItem {
     data class StartBadge(val text: String) : DotGridItem()
     data class StandardDot(val index: Int) : DotGridItem()
     data class EndBadge(val text: String) : DotGridItem()
+}
+
+data class MilestoneCelebrationParticle(
+    val id: Int,
+    val type: String,
+    val startXRatio: Float,
+    val startYRatio: Float,
+    val vxDp: Float,
+    val vyDp: Float,
+    val initialSizeDp: Float,
+    val initialRotation: Float,
+    val rotationSpeed: Float
+)
+
+fun androidx.compose.ui.graphics.drawscope.DrawScope.drawMilestoneParticle(
+    type: String,
+    color: Color,
+    sizePx: Float,
+    center: androidx.compose.ui.geometry.Offset,
+    rotation: Float,
+    alpha: Float
+) {
+    if (sizePx <= 0f || alpha <= 0f) return
+    val pColor = color.copy(alpha = alpha.coerceIn(0f, 1f))
+    when (type.lowercase()) {
+        "star" -> {
+            val path = androidx.compose.ui.graphics.Path()
+            val outerR = sizePx / 2f
+            val innerR = outerR * 0.42f
+            for (i in 0 until 10) {
+                val r = if (i % 2 == 0) outerR else innerR
+                val angle = Math.toRadians((i * 36 - 90).toDouble())
+                val x = center.x + (r * kotlin.math.cos(angle)).toFloat()
+                val y = center.y + (r * kotlin.math.sin(angle)).toFloat()
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            path.close()
+            withTransform({
+                rotate(degrees = rotation, pivot = center)
+            }) {
+                drawPath(path = path, color = pColor)
+            }
+        }
+        "diamond" -> {
+            val s = sizePx * 0.707f
+            withTransform({
+                rotate(degrees = rotation + 45f, pivot = center)
+            }) {
+                drawRoundRect(
+                    color = pColor,
+                    topLeft = androidx.compose.ui.geometry.Offset(center.x - s / 2f, center.y - s / 2f),
+                    size = androidx.compose.ui.geometry.Size(s, s),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(s * 0.1f, s * 0.1f)
+                )
+            }
+        }
+        "heart" -> {
+            val path = androidx.compose.ui.graphics.Path()
+            val s = sizePx * 0.45f
+            path.moveTo(center.x, center.y + s * 0.75f)
+            path.cubicTo(center.x - s * 1.2f, center.y, center.x - s * 1.2f, center.y - s * 0.9f, center.x - s * 0.5f, center.y - s * 0.9f)
+            path.cubicTo(center.x - s * 0.1f, center.y - s * 0.9f, center.x, center.y - s * 0.5f, center.x, center.y - s * 0.4f)
+            path.cubicTo(center.x, center.y - s * 0.4f, center.x + s * 0.1f, center.y - s * 0.9f, center.x + s * 0.5f, center.y - s * 0.9f)
+            path.cubicTo(center.x + s * 1.2f, center.y - s * 0.9f, center.x + s * 1.2f, center.y, center.x, center.y + s * 0.75f)
+            path.close()
+            withTransform({
+                rotate(degrees = rotation, pivot = center)
+            }) {
+                drawPath(path = path, color = pColor)
+            }
+        }
+        "flag" -> {
+            val path = androidx.compose.ui.graphics.Path()
+            val w = sizePx * 0.7f
+            val h = sizePx * 0.5f
+            val left = center.x - w / 2f
+            val top = center.y - sizePx / 2f
+            withTransform({
+                rotate(degrees = rotation, pivot = center)
+            }) {
+                drawLine(
+                    color = pColor,
+                    start = androidx.compose.ui.geometry.Offset(left, top),
+                    end = androidx.compose.ui.geometry.Offset(left, top + sizePx),
+                    strokeWidth = (sizePx * 0.15f).coerceAtLeast(2f),
+                    cap = StrokeCap.Round
+                )
+                path.moveTo(left, top)
+                path.lineTo(left + w, top + h * 0.5f)
+                path.lineTo(left, top + h)
+                path.close()
+                drawPath(path = path, color = pColor)
+            }
+        }
+        "danger" -> {
+            val path = androidx.compose.ui.graphics.Path()
+            val r = sizePx / 2f
+            path.moveTo(center.x, center.y - r)
+            path.lineTo(center.x + r * 0.866f, center.y + r * 0.5f)
+            path.lineTo(center.x - r * 0.866f, center.y + r * 0.5f)
+            path.close()
+            withTransform({
+                rotate(degrees = rotation, pivot = center)
+            }) {
+                drawPath(path = path, color = pColor)
+            }
+        }
+        "cross" -> {
+            val half = sizePx * 0.38f
+            val strokeW = (sizePx * 0.2f).coerceAtLeast(2f)
+            withTransform({
+                rotate(degrees = rotation + 45f, pivot = center)
+            }) {
+                drawLine(
+                    color = pColor,
+                    start = androidx.compose.ui.geometry.Offset(center.x - half, center.y),
+                    end = androidx.compose.ui.geometry.Offset(center.x + half, center.y),
+                    strokeWidth = strokeW,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    color = pColor,
+                    start = androidx.compose.ui.geometry.Offset(center.x, center.y - half),
+                    end = androidx.compose.ui.geometry.Offset(center.x, center.y + half),
+                    strokeWidth = strokeW,
+                    cap = StrokeCap.Round
+                )
+            }
+        }
+        "line" -> {
+            val w = (sizePx * 0.25f).coerceAtLeast(2f)
+            val h = sizePx
+            withTransform({
+                rotate(degrees = rotation, pivot = center)
+            }) {
+                drawRoundRect(
+                    color = pColor,
+                    topLeft = androidx.compose.ui.geometry.Offset(center.x - w / 2f, center.y - h / 2f),
+                    size = androidx.compose.ui.geometry.Size(w, h),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(w / 2f, w / 2f)
+                )
+            }
+        }
+        else -> { // "dot"
+            drawCircle(
+                color = pColor,
+                radius = (sizePx * 0.45f).coerceAtLeast(2f),
+                center = center
+            )
+        }
+    }
 }
 
 @Composable
@@ -2822,10 +3325,11 @@ fun GoalCard(
     val currentPointsValue = if (isAnimationEnabled) animatedPoints else goal.currentPoints.toFloat()
     val currentMaxPointsValue = if (isAnimationEnabled) animatedMaxPoints else goal.maxPoints.toFloat()
 
-    val progressRatio = if (currentMaxPointsValue > 0) {
-        minOf(1f, currentPointsValue / currentMaxPointsValue)
+    val rawProgressRatio = if (currentMaxPointsValue > 0) {
+        currentPointsValue / currentMaxPointsValue
     } else 0f
-    val percentage = (progressRatio * 100).toInt()
+    val progressRatio = minOf(1f, rawProgressRatio)
+    val percentage = (rawProgressRatio * 100).toInt()
     val isCompleted = displayPoints >= displayMaxPoints
 
     val customColor = remember(goal.colorHex) {
@@ -2836,7 +3340,102 @@ fun GoalCard(
         }
     }
 
+    val effectiveBorderColor = remember(goal.cardBorderHex, outlineColorHex, customColor) {
+        if (goal.cardBorderHex != "NONE") {
+            try { Color(android.graphics.Color.parseColor(goal.cardBorderHex)) } catch (e: Exception) { customColor }
+        } else if (outlineColorHex != null) {
+            try { Color(android.graphics.Color.parseColor(outlineColorHex)) } catch (e: Exception) { customColor }
+        } else {
+            customColor
+        }
+    }
+
     val milestones = remember(goal.milestonesStr) { parseMilestones(goal.milestonesStr) }
+
+    // Celebration Animation State
+    var lastCelebratedVisualPoints by remember(goal.id) { mutableStateOf(displayPoints) }
+    var celebrationTrigger by remember(goal.id) { mutableStateOf(0) }
+    var celebrationMilestoneType by remember(goal.id) { mutableStateOf("star") }
+    var celebrationIsGoalComplete by remember(goal.id) { mutableStateOf(false) }
+
+    val celebrationAnim = remember { Animatable(0f) }
+    val bigDotScaleAnim = remember { Animatable(0f) }
+
+    val newlyPassedMilestones = remember(displayPoints, lastCelebratedVisualPoints) {
+        if (displayPoints > lastCelebratedVisualPoints) {
+            milestones.filter { it.value in (lastCelebratedVisualPoints + 1)..displayPoints }
+        } else emptyList()
+    }
+    val isGoalNewlyDone = displayPoints >= displayMaxPoints && lastCelebratedVisualPoints < displayMaxPoints && displayMaxPoints > 0
+
+    LaunchedEffect(displayPoints) {
+        if (isAnimationEnabled && displayPoints > lastCelebratedVisualPoints) {
+            if (newlyPassedMilestones.isNotEmpty() || isGoalNewlyDone) {
+                celebrationIsGoalComplete = isGoalNewlyDone
+                celebrationMilestoneType = newlyPassedMilestones.lastOrNull()?.type ?: "star"
+                celebrationTrigger++
+            }
+        }
+        lastCelebratedVisualPoints = displayPoints
+    }
+
+    var particles by remember(celebrationTrigger) { mutableStateOf<List<MilestoneCelebrationParticle>>(emptyList()) }
+
+    LaunchedEffect(celebrationTrigger) {
+        if (celebrationTrigger > 0 && isAnimationEnabled) {
+            val count = if (celebrationIsGoalComplete) (20..30).random() else (5..10).random()
+            val allTypes = listOf("flag", "star", "heart", "diamond", "danger", "cross", "line", "dot")
+            val newParticles = (0 until count).map { id ->
+                val type = if (celebrationIsGoalComplete) allTypes.random() else celebrationMilestoneType
+                val side = (0..3).random()
+                val startXRatio = when (side) {
+                    0, 2 -> (5..95).random() / 100f
+                    1 -> 1.0f
+                    else -> 0.0f
+                }
+                val startYRatio = when (side) {
+                    1, 3 -> (5..95).random() / 100f
+                    0 -> 0.0f
+                    else -> 1.0f
+                }
+                val speed = (100..280).random().toFloat()
+                val angleDeg = when (side) {
+                    0 -> (-150..-30).random().toFloat()
+                    1 -> (-60..60).random().toFloat()
+                    2 -> (30..150).random().toFloat()
+                    else -> (120..240).random().toFloat()
+                }
+                val angleRad = Math.toRadians(angleDeg.toDouble())
+                val vx = (speed * kotlin.math.cos(angleRad)).toFloat()
+                val vy = (speed * kotlin.math.sin(angleRad)).toFloat()
+                val size = (12..22).random().toFloat()
+                MilestoneCelebrationParticle(
+                    id = id,
+                    type = type,
+                    startXRatio = startXRatio,
+                    startYRatio = startYRatio,
+                    vxDp = vx,
+                    vyDp = vy,
+                    initialSizeDp = size,
+                    initialRotation = (0..360).random().toFloat(),
+                    rotationSpeed = (-160..160).random().toFloat()
+                )
+            }
+            particles = newParticles
+
+            launch {
+                bigDotScaleAnim.snapTo(0f)
+                bigDotScaleAnim.animateTo(1.35f, tween(140, easing = LinearEasing))
+                bigDotScaleAnim.animateTo(1f, spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow))
+                delay(1650)
+                bigDotScaleAnim.animateTo(0f, tween(350, easing = FastOutSlowInEasing))
+            }
+
+            celebrationAnim.snapTo(0f)
+            celebrationAnim.animateTo(1f, tween(durationMillis = 2500, easing = LinearEasing))
+            particles = emptyList()
+        }
+    }
 
     // Math calculation for different behaviors driven directly from animated points and animated max points
     val rangeStart: Float
@@ -2873,25 +3472,28 @@ fun GoalCard(
 
     val cardBgColor = getCardBackgroundColor(isDark, goal.secondaryColorHex)
 
-    Card(
+    Box(
         modifier = modifier
             .fillMaxWidth()
-            .testTag("goal_card_${goal.id}"),
-        shape = RoundedCornerShape(28.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = cardBgColor
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isDark) 0.dp else 2.dp),
-        border = if (goal.cardBorderHex != "NONE") {
-            val strokeColor = try { Color(android.graphics.Color.parseColor(goal.cardBorderHex)) } catch (e: Exception) { Color(0xFF6750A4) }
-            BorderStroke(2.dp, strokeColor)
-        } else if (outlineColorHex != null) {
-            val strokeColor = try { Color(android.graphics.Color.parseColor(outlineColorHex)) } catch (e: Exception) { Color(0xFF6750A4) }
-            BorderStroke(2.dp, strokeColor)
-        } else {
-            if (isDark) null else borderStrokeForCard(goal.secondaryColorHex)
-        }
+            .testTag("goal_card_${goal.id}")
     ) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = cardBgColor
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = if (isDark) 0.dp else 2.dp),
+            border = if (goal.cardBorderHex != "NONE") {
+                val strokeColor = try { Color(android.graphics.Color.parseColor(goal.cardBorderHex)) } catch (e: Exception) { Color(0xFF6750A4) }
+                BorderStroke(2.dp, strokeColor)
+            } else if (outlineColorHex != null) {
+                val strokeColor = try { Color(android.graphics.Color.parseColor(outlineColorHex)) } catch (e: Exception) { Color(0xFF6750A4) }
+                BorderStroke(2.dp, strokeColor)
+            } else {
+                if (isDark) null else borderStrokeForCard(goal.secondaryColorHex)
+            }
+        ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -3148,7 +3750,7 @@ fun GoalCard(
 
                             // 1. Draw the Arc Gauge Tracks
                             Canvas(modifier = Modifier.fillMaxSize().padding(goal.meterThickness.dp / 2 + 6.dp)) {
-                                // Draw background arc
+                                // Draw main background arc
                                 drawArc(
                                     color = trackColor,
                                     startAngle = 150f,
@@ -3156,7 +3758,7 @@ fun GoalCard(
                                     useCenter = false,
                                     style = Stroke(width = strokeWidthPx, cap = StrokeCap.Round)
                                 )
-                                // Draw active progress arc
+                                // Draw main active progress arc
                                 drawArc(
                                     color = customColor,
                                     startAngle = 150f,
@@ -3164,6 +3766,39 @@ fun GoalCard(
                                     useCenter = false,
                                     style = Stroke(width = strokeWidthPx, cap = StrokeCap.Round)
                                 )
+
+                                // Inner Sliced Milestone Meter Gauge
+                                if (goal.showMilestoneProgressBar && milestones.isNotEmpty() && (goal.barBehavior == 2 || goal.barBehavior == 3)) {
+                                    val count = milestones.size
+                                    val innerStrokePx = strokeWidthPx * 0.45f
+                                    val innerOffsetPx = strokeWidthPx * 0.85f + 12f
+                                    val gapAngle = if (count > 1) 7f else 0f
+                                    val totalGap = (count - 1) * gapAngle
+                                    val availableSweep = 240f - totalGap
+                                    val sliceSweep = (availableSweep / count).coerceAtLeast(1f)
+
+                                    val innerSize = androidx.compose.ui.geometry.Size(
+                                        size.width - innerOffsetPx * 2,
+                                        size.height - innerOffsetPx * 2
+                                    )
+                                    val innerTopLeft = androidx.compose.ui.geometry.Offset(innerOffsetPx, innerOffsetPx)
+
+                                    for (i in 0 until count) {
+                                        val sliceStart = 150f + i * (sliceSweep + gapAngle)
+                                        val isPassed = milestones[i].value <= displayPoints
+                                        val sliceColor = if (isPassed) customColor else trackColor
+
+                                        drawArc(
+                                            color = sliceColor,
+                                            startAngle = sliceStart,
+                                            sweepAngle = sliceSweep,
+                                            useCenter = false,
+                                            topLeft = innerTopLeft,
+                                            size = innerSize,
+                                            style = Stroke(width = innerStrokePx, cap = StrokeCap.Round)
+                                        )
+                                    }
+                                }
                             }
 
                             // 2. Overlay Milestones checkpoints along the circular arc
@@ -3200,40 +3835,12 @@ fun GoalCard(
                                             .rotate(angle - 270f),
                                         contentAlignment = Alignment.Center
                                     ) {
-                                        when (milestone.type) {
-                                            "star" -> {
-                                                Icon(
-                                                    imageVector = Icons.Filled.Star,
-                                                    contentDescription = null,
-                                                    tint = if (isPassed) Color.White else customColor,
-                                                    modifier = Modifier.size(14.dp)
-                                                )
-                                            }
-                                            "line" -> {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .width(3.dp)
-                                                        .height(11.dp)
-                                                        .background(if (isPassed) Color.White else customColor)
-                                                )
-                                            }
-                                            "flag" -> {
-                                                Icon(
-                                                    imageVector = Icons.Filled.Flag,
-                                                    contentDescription = null,
-                                                    tint = if (isPassed) Color.White else customColor,
-                                                    modifier = Modifier.size(14.dp)
-                                                )
-                                            }
-                                            else -> { // "dot"
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(8.dp)
-                                                        .clip(CircleShape)
-                                                        .background(if (isPassed) Color.White else customColor)
-                                                )
-                                            }
-                                        }
+                                        val passedColor = if (isDark) Color.Black else Color.White
+                                        MilestoneIconDisplay(
+                                            type = milestone.type,
+                                            tint = if (isPassed) passedColor else customColor,
+                                            size = 14.dp
+                                        )
                                     }
                                 }
                             }
@@ -3285,7 +3892,7 @@ fun GoalCard(
                                 modifier = Modifier.fillMaxSize()
                             ) {
                                 Text(
-                                    text = if (isCompleted) "100%" else "$percentage%",
+                                    text = "$percentage%",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontWeight = FontWeight.Bold,
                                         color = customColor,
@@ -3428,7 +4035,7 @@ fun GoalCard(
                                 )
                             }
                             Text(
-                                text = if (isCompleted) "100%" else "$percentage%",
+                                text = "$percentage%",
                                 style = MaterialTheme.typography.labelSmall.copy(
                                     fontWeight = FontWeight.Bold,
                                     color = customColor,
@@ -3632,40 +4239,12 @@ fun GoalCard(
                                                     ) {
                                                         if (milestoneAtThisDot != null) {
                                                             val isPassed = milestoneAtThisDot.value <= displayPoints
-                                                            when (milestoneAtThisDot.type) {
-                                                                "star" -> {
-                                                                    Icon(
-                                                                        imageVector = Icons.Filled.Star,
-                                                                        contentDescription = null,
-                                                                        tint = if (isPassed) Color.White else customColor,
-                                                                        modifier = Modifier.size(finalDotSize * 0.6f)
-                                                                    )
-                                                                }
-                                                                "line" -> {
-                                                                    Box(
-                                                                        modifier = Modifier
-                                                                            .width(2.dp)
-                                                                            .height(finalDotSize * 0.5f)
-                                                                            .background(if (isPassed) Color.White else customColor)
-                                                                    )
-                                                                }
-                                                                "flag" -> {
-                                                                    Icon(
-                                                                        imageVector = Icons.Filled.Flag,
-                                                                        contentDescription = null,
-                                                                        tint = if (isPassed) Color.White else customColor,
-                                                                        modifier = Modifier.size(finalDotSize * 0.6f)
-                                                                    )
-                                                                }
-                                                                else -> {
-                                                                    Box(
-                                                                        modifier = Modifier
-                                                                            .size(finalDotSize * 0.4f)
-                                                                            .clip(CircleShape)
-                                                                            .background(if (isPassed) Color.White else customColor)
-                                                                    )
-                                                                }
-                                                            }
+                                                            val passedColor = if (isDark) Color.Black else Color.White
+                                                            MilestoneIconDisplay(
+                                                                type = milestoneAtThisDot.type,
+                                                                tint = if (isPassed) passedColor else customColor,
+                                                                size = finalDotSize * 0.6f
+                                                            )
                                                         }
                                                     }
                                                 }
@@ -3825,7 +4404,7 @@ fun GoalCard(
                                         Spacer(modifier = Modifier.height(2.dp))
                                     }
                                     Text(
-                                        text = if (isCompleted) "100%" else "$percentage%",
+                                        text = "$percentage%",
                                         style = MaterialTheme.typography.labelSmall.copy(
                                             fontWeight = FontWeight.Bold,
                                             color = if (goal.barBehavior == 2 || goal.barBehavior == 3) customColor.copy(alpha = 0.7f) else customColor,
@@ -3837,133 +4416,155 @@ fun GoalCard(
 
                             Spacer(modifier = Modifier.height(8.dp))
 
-                            // Progress Bar container overlaying milestones
+                            // Progress Bar container (Secondary sliced milestone bar on top + Primary continuous bar on bottom)
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                BoxWithConstraints(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(24.dp),
-                                    contentAlignment = Alignment.CenterStart
+                                Column(
+                                    modifier = Modifier.weight(1f),
+                                    verticalArrangement = Arrangement.spacedBy(1.dp)
                                 ) {
-                                    val barWidth = maxWidth
-
-                                    // Progress Bar
-                                    LinearProgressIndicator(
-                                        progress = { progressFraction.coerceIn(0f, 1f) },
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(12.dp)
-                                            .clip(RoundedCornerShape(6.dp)),
-                                        color = customColor,
-                                        trackColor = if (isDark) Color(0xFF333038) else Color(0xFFE6E0E9)
-                                    )
-
-                                    // Render Milestones checkpoints
-                                    milestones.forEach { milestone ->
-                                        val isPassed = milestone.value <= displayPoints
-                                        val isVisible = when (goal.barBehavior) {
-                                            0 -> milestone.value.toFloat() <= currentMaxPointsValue
-                                            1 -> true
-                                            2 -> milestone.value <= rangeEnd
-                                            3 -> milestone.value >= rangeStart && milestone.value <= rangeEnd
-                                            else -> false
-                                        } && (!goal.hidePassedMilestones || !isPassed)
-
-                                        if (isVisible) {
-                                            val fraction = when (goal.barBehavior) {
-                                                3 -> {
-                                                    val denom = rangeEnd - rangeStart
-                                                    if (denom > 0) (milestone.value - rangeStart) / denom else 0f
-                                                }
-                                                else -> {
-                                                    if (rangeEnd > 0) milestone.value.toFloat() / rangeEnd else 0f
-                                                }
-                                            }.coerceIn(0f, 1f)
-
-                                            val offset = barWidth * fraction
-
-                                            Box(
-                                                modifier = Modifier
-                                                    .align(Alignment.CenterStart)
-                                                    .offset(x = offset - 6.dp),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                when (milestone.type) {
-                                                    "star" -> {
-                                                        Icon(
-                                                            imageVector = Icons.Filled.Star,
-                                                            contentDescription = null,
-                                                            tint = if (isPassed) Color.White else customColor,
-                                                            modifier = Modifier.size(10.dp)
+                                    // 1. Secondary Sliced Milestone Progress Bar (ABOVE main bar, 4dp height)
+                                    if (goal.showMilestoneProgressBar && milestones.isNotEmpty() && (goal.barBehavior == 2 || goal.barBehavior == 3)) {
+                                        val spacing = 2.dp
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(4.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(spacing),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            milestones.forEach { milestone ->
+                                                val isPassed = milestone.value <= displayPoints
+                                                Box(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .fillMaxHeight()
+                                                        .clip(RoundedCornerShape(2.dp))
+                                                        .background(
+                                                            if (isPassed) customColor
+                                                            else if (isDark) Color(0xFF333038)
+                                                            else Color(0xFFE6E0E9)
                                                         )
-                                                    }
-                                                    "line" -> {
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .width(2.5.dp)
-                                                                .height(12.dp)
-                                                                .background(if (isPassed) Color.White else customColor.copy(alpha = 0.85f))
-                                                        )
-                                                    }
-                                                    "flag" -> {
-                                                        Icon(
-                                                            imageVector = Icons.Filled.Flag,
-                                                            contentDescription = null,
-                                                            tint = if (isPassed) Color.White else customColor,
-                                                            modifier = Modifier.size(10.dp)
-                                                        )
-                                                    }
-                                                    else -> { // "dot"
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .size(6.dp)
-                                                                .clip(CircleShape)
-                                                                .background(if (isPassed) Color.White else customColor)
-                                                        )
-                                                    }
-                                                }
+                                                )
                                             }
                                         }
                                     }
 
-                                    // Render the main Goal target (maxPoints) as a bigger dot!
-                                    val goalVisible = when (goal.barBehavior) {
-                                        0 -> true
-                                        1 -> true
-                                        2 -> currentMaxPointsValue <= rangeEnd
-                                        3 -> currentMaxPointsValue >= rangeStart && currentMaxPointsValue <= rangeEnd
-                                        else -> false
-                                    }
+                                    // 2. Primary Continuous Progress Bar with Milestones and Goal Dot (BELOW milestone bar)
+                                    BoxWithConstraints(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(16.dp),
+                                        contentAlignment = Alignment.CenterStart
+                                    ) {
+                                        val barWidth = maxWidth
+                                        val trackColor = if (isDark) Color(0xFF333038) else Color(0xFFE6E0E9)
+                                        val trackHeight = 11.dp
+                                        val markerSize = 8.5.dp
+                                        val halfMarker = markerSize / 2
+                                        val goalDotSize = 16.dp
+                                        val halfGoalDot = goalDotSize / 2
 
-                                    if (goalVisible) {
-                                        val goalFraction = when (goal.barBehavior) {
-                                            3 -> {
-                                                val denom = rangeEnd - rangeStart
-                                                if (denom > 0) (currentMaxPointsValue - rangeStart) / denom else 0f
-                                            }
-                                            else -> {
-                                                if (rangeEnd > 0) currentMaxPointsValue / rangeEnd else 1f
-                                            }
-                                        }.coerceIn(0f, 1f)
-
-                                        val goalOffset = barWidth * goalFraction
-
+                                        // Background Track
                                         Box(
                                             modifier = Modifier
-                                                .align(Alignment.CenterStart)
-                                                .offset(x = goalOffset - 8.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
+                                                .fillMaxWidth()
+                                                .height(trackHeight)
+                                                .clip(RoundedCornerShape(trackHeight / 2))
+                                                .background(trackColor)
+                                        )
+
+                                        // Active Progress Fill
+                                        val activeFraction = progressFraction.coerceIn(0f, 1f)
+                                        if (activeFraction > 0f) {
                                             Box(
                                                 modifier = Modifier
-                                                    .size(14.dp)
-                                                    .clip(CircleShape)
+                                                    .fillMaxWidth(activeFraction)
+                                                    .height(trackHeight)
+                                                    .clip(RoundedCornerShape(trackHeight / 2))
                                                     .background(customColor)
-                                                    .border(2.dp, Color.White, CircleShape)
                                             )
+                                        }
+
+                                        // Milestone glyph icons placed directly along the progress bar track
+                                        milestones.forEach { milestone ->
+                                            val isPassed = milestone.value <= displayPoints
+                                            val isVisible = when (goal.barBehavior) {
+                                                0 -> milestone.value.toFloat() <= currentMaxPointsValue
+                                                1 -> true
+                                                2 -> milestone.value <= rangeEnd
+                                                3 -> milestone.value >= rangeStart && milestone.value <= rangeEnd
+                                                else -> false
+                                            } && (!goal.hidePassedMilestones || !isPassed)
+
+                                            if (isVisible) {
+                                                val fraction = when (goal.barBehavior) {
+                                                    3 -> {
+                                                        val denom = rangeEnd - rangeStart
+                                                        if (denom > 0) (milestone.value - rangeStart) / denom else 0f
+                                                    }
+                                                    else -> {
+                                                        if (rangeEnd > 0) milestone.value.toFloat() / rangeEnd else 0f
+                                                    }
+                                                }.coerceIn(0f, 1f)
+
+                                                val offset = barWidth * fraction
+                                                val clampedX = (offset - halfMarker).coerceIn(0.dp, (barWidth - markerSize).coerceAtLeast(0.dp))
+
+                                                Box(
+                                                    modifier = Modifier
+                                                        .align(Alignment.CenterStart)
+                                                        .offset(x = clampedX),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    val passedColor = if (isDark) Color.Black else Color.White
+                                                    MilestoneIconDisplay(
+                                                        type = milestone.type,
+                                                        tint = if (isPassed) passedColor else customColor,
+                                                        size = markerSize
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        // Main Goal Target Dot placed on the progress bar track
+                                        val goalVisible = when (goal.barBehavior) {
+                                            0 -> true
+                                            1 -> true
+                                            2 -> currentMaxPointsValue <= rangeEnd
+                                            3 -> currentMaxPointsValue >= rangeStart && currentMaxPointsValue <= rangeEnd
+                                            else -> false
+                                        }
+                                        if (goalVisible) {
+                                            val goalFraction = when (goal.barBehavior) {
+                                                3 -> {
+                                                    val denom = rangeEnd - rangeStart
+                                                    if (denom > 0) (currentMaxPointsValue - rangeStart) / denom else 0f
+                                                }
+                                                else -> {
+                                                    if (rangeEnd > 0) currentMaxPointsValue / rangeEnd else 1f
+                                                }
+                                            }.coerceIn(0f, 1f)
+
+                                            val goalOffset = barWidth * goalFraction
+                                            val clampedGoalX = (goalOffset - halfGoalDot).coerceIn(0.dp, (barWidth - goalDotSize).coerceAtLeast(0.dp))
+
+                                            Box(
+                                                modifier = Modifier
+                                                    .align(Alignment.CenterStart)
+                                                    .offset(x = clampedGoalX),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(goalDotSize)
+                                                        .clip(CircleShape)
+                                                        .background(customColor)
+                                                        .border(2.dp, if (isDark) Color(0xFF1D1B20) else Color.White, CircleShape)
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -4026,6 +4627,100 @@ fun GoalCard(
             }
         }
     }
+
+    // 1. Expanding Border Wave Effect (Expands fast then slow, fades out in 2.5s)
+    if (celebrationAnim.value > 0f && celebrationAnim.value < 1f) {
+        val animT = celebrationAnim.value
+        val deceleratedT = 1f - (1f - animT) * (1f - animT)
+        val borderScale = 1.0f + 0.12f * deceleratedT
+        val borderAlpha = (1f - animT).coerceIn(0f, 1f)
+
+        Box(
+            modifier = Modifier
+                .matchParentSize()
+                .graphicsLayer(
+                    scaleX = borderScale,
+                    scaleY = borderScale,
+                    alpha = borderAlpha
+                )
+                .border(
+                    width = 2.5.dp,
+                    color = effectiveBorderColor,
+                    shape = RoundedCornerShape(28.dp)
+                )
+        )
+    }
+
+    // 2. Particle Effects (5-10 current milestone icons on milestone, 20-30 random icons on goal complete)
+    if (particles.isNotEmpty() && celebrationAnim.value > 0f && celebrationAnim.value < 1f) {
+        val density = LocalDensity.current
+        val animT = celebrationAnim.value
+        val timeSec = animT * 2.5f
+        val particleProgress = animT.coerceIn(0f, 1f)
+        val particleAlpha = (1f - particleProgress).coerceIn(0f, 1f)
+
+        Canvas(
+            modifier = Modifier
+                .matchParentSize()
+                .zIndex(20f)
+        ) {
+            val widthPx = size.width
+            val heightPx = size.height
+
+            particles.forEach { particle ->
+                val startX = particle.startXRatio * widthPx
+                val startY = particle.startYRatio * heightPx
+                val vxPx = with(density) { particle.vxDp.dp.toPx() }
+                val vyPx = with(density) { particle.vyDp.dp.toPx() }
+                val gravityPx = with(density) { 45.dp.toPx() }
+
+                val currentX = startX + vxPx * timeSec
+                val currentY = startY + vyPx * timeSec + 0.5f * gravityPx * timeSec * timeSec
+                val initialSizePx = with(density) { particle.initialSizeDp.dp.toPx() }
+                val currentSizePx = initialSizePx * (1f - particleProgress)
+                val currentRotation = particle.initialRotation + particle.rotationSpeed * timeSec
+
+                drawMilestoneParticle(
+                    type = particle.type,
+                    color = customColor,
+                    sizePx = currentSizePx,
+                    center = androidx.compose.ui.geometry.Offset(currentX, currentY),
+                    rotation = currentRotation,
+                    alpha = particleAlpha
+                )
+            }
+        }
+    }
+
+    // 3. Celebratory Big Dot in Top-Left Corner
+    if (bigDotScaleAnim.value > 0.01f) {
+        val dotScale = bigDotScaleAnim.value
+        val dotAlpha = (dotScale * 1.5f).coerceIn(0f, 1f)
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .offset(x = 12.dp, y = 12.dp)
+                .graphicsLayer(
+                    scaleX = dotScale,
+                    scaleY = dotScale,
+                    alpha = dotAlpha
+                )
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(customColor)
+                .border(1.5.dp, if (isDark) Color(0xFF1D1B20) else Color.White, CircleShape)
+                .zIndex(30f),
+            contentAlignment = Alignment.Center
+        ) {
+            val passedColor = if (isDark) Color.Black else Color.White
+            MilestoneIconDisplay(
+                type = celebrationMilestoneType,
+                tint = passedColor,
+                size = 20.dp
+            )
+        }
+    }
+}
 }
 
 private fun borderStrokeForCard(secondaryColorHex: String): androidx.compose.foundation.BorderStroke? {
@@ -4050,16 +4745,20 @@ fun HoldableIconButton(
     contentColor: Color = Color(0xFF21005D),
     content: @Composable () -> Unit
 ) {
+    val currentOnClick by rememberUpdatedState(onClick)
+    val currentOnLongClick by rememberUpdatedState(onLongClick)
+
     Surface(
         color = containerColor,
         contentColor = contentColor,
+        shape = RoundedCornerShape(12.dp),
         modifier = modifier
             .size(48.dp)
             .testTag(testTag)
             .clip(RoundedCornerShape(12.dp))
             .combinedClickable(
-                onClick = onClick,
-                onLongClick = onLongClick
+                onClick = { currentOnClick() },
+                onLongClick = { currentOnLongClick() }
             )
     ) {
         Box(
@@ -4295,7 +4994,7 @@ fun GroupCard(
     val currentTotalPoints = childGoals.sumOf {
         if (it.maxPoints > 0) {
             val fraction = it.currentPoints.toDouble() / it.maxPoints.toDouble()
-            if (it.allowExceed) fraction * it.groupValue else minOf(it.groupValue, fraction * it.groupValue)
+            if (it.allowGroupPointsOverflow) fraction * it.groupValue else minOf(it.groupValue, fraction * it.groupValue)
         } else 0.0
     }
 
@@ -4560,7 +5259,7 @@ fun CompactGroupCard(
     val currentTotalPoints = childGoals.sumOf {
         if (it.maxPoints > 0) {
             val fraction = it.currentPoints.toDouble() / it.maxPoints.toDouble()
-            if (it.allowExceed) fraction * it.groupValue else minOf(it.groupValue, fraction * it.groupValue)
+            if (it.allowGroupPointsOverflow) fraction * it.groupValue else minOf(it.groupValue, fraction * it.groupValue)
         } else 0.0
     }
 
@@ -4729,29 +5428,35 @@ fun SortableCardContainer(
          (selectedItemForMove is DashboardItem.NoteItem && item is DashboardItem.NoteItem) ||
          (selectedItemForMove is DashboardItem.GroupItem && item is DashboardItem.GroupItem))
 
+    val currentItemState by rememberUpdatedState(item)
+    val currentSelectedState by rememberUpdatedState(selectedItemForMove)
+    val currentIsSelectedForMove by rememberUpdatedState(isSelectedForMove)
+    val currentOnSelectItemForMove by rememberUpdatedState(onSelectItemForMove)
+
     Box(
         modifier = Modifier
             .fillMaxWidth()
             .then(
                 if (isSortingModeEnabled) {
-                    Modifier.pointerInput(item, selectedItemForMove) {
+                    Modifier.pointerInput(isSortingModeEnabled) {
                         detectTapGestures(
                             onLongPress = {
-                                onSelectItemForMove(item)
+                                currentOnSelectItemForMove(currentItemState)
                             },
                             onTap = {
-                                if (selectedItemForMove != null) {
-                                    if (isSelectedForMove) {
-                                        onSelectItemForMove(null)
+                                val selected = currentSelectedState
+                                if (selected != null) {
+                                    if (currentIsSelectedForMove) {
+                                        currentOnSelectItemForMove(null)
                                     } else {
-                                        val source = selectedItemForMove
+                                        val source = selected
                                         val sourceType = when (source) {
                                             is DashboardItem.GoalItem -> "goal"
                                             is DashboardItem.NoteItem -> "note"
                                             is DashboardItem.GroupItem -> "group"
                                         }
-                                        viewModel.moveItemBeforeTarget(source.id, sourceType, item.id, itemType, currentGroupId)
-                                        onSelectItemForMove(null)
+                                        viewModel.moveItemBeforeTarget(source.id, sourceType, currentItemState.id, itemType, currentGroupId)
+                                        currentOnSelectItemForMove(null)
                                     }
                                 }
                             }
@@ -5782,7 +6487,7 @@ fun AddGroupDialog(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun AddGoalDialog(
     isDark: Boolean,
@@ -5801,6 +6506,7 @@ fun AddGoalDialog(
         barBehavior: Int,
         hidePassedMilestones: Boolean,
         showRemainingCount: Boolean,
+        showMilestoneProgressBar: Boolean,
         progressType: Int,
         meterThickness: Float,
         dotsPerRow: Int,
@@ -5811,7 +6517,8 @@ fun AddGoalDialog(
         pointTrackingEnabled: Boolean,
         statsVisualType: Int,
         showHighlights: Boolean,
-        groupValue: Double
+        groupValue: Double,
+        allowGroupPointsOverflow: Boolean
     ) -> Unit
 ) {
     val isInsideGroup = currentGroupId != 0 || (goalToEdit != null && goalToEdit.parentGroupId != 0)
@@ -5820,6 +6527,7 @@ fun AddGoalDialog(
     var currentPointsStr by remember { mutableStateOf(goalToEdit?.currentPoints?.toString() ?: "") }
     var maxPointsStr by remember { mutableStateOf(goalToEdit?.maxPoints?.toString() ?: "") }
     var allowExceed by remember { mutableStateOf(goalToEdit?.allowExceed ?: false) }
+    var allowGroupPointsOverflow by remember { mutableStateOf(goalToEdit?.allowGroupPointsOverflow ?: true) }
     var selectedColorHex by remember { mutableStateOf(goalToEdit?.colorHex ?: "#6750A4") }
     var selectedSecondaryColorHex by remember { mutableStateOf(goalToEdit?.secondaryColorHex ?: "DEFAULT") }
     var selectedCardBorderHex by remember { mutableStateOf(goalToEdit?.cardBorderHex ?: "NONE") }
@@ -5844,6 +6552,7 @@ fun AddGoalDialog(
     var barBehavior by remember { mutableStateOf(goalToEdit?.barBehavior ?: 0) }
     var hidePassedMilestones by remember { mutableStateOf(goalToEdit?.hidePassedMilestones ?: false) }
     var showRemainingCount by remember { mutableStateOf(goalToEdit?.showRemainingCount ?: true) }
+    var showMilestoneProgressBar by remember { mutableStateOf(goalToEdit?.showMilestoneProgressBar ?: true) }
 
     // Types Tab state
     var progressType by remember { mutableStateOf(goalToEdit?.progressType ?: 0) }
@@ -5852,6 +6561,7 @@ fun AddGoalDialog(
 
     var activeTab by remember { mutableStateOf(0) } // 0 = General, 1 = Types, 2 = Milestones, 3 = Styles
     var showAddMilestoneDialog by remember { mutableStateOf(false) }
+    var showMultipleMilestonesDialog by remember { mutableStateOf(false) }
 
     var titleError by remember { mutableStateOf(false) }
     var maxPointsError by remember { mutableStateOf(false) }
@@ -6129,6 +6839,40 @@ fun AddGoalDialog(
                             )
                         }
                     }
+
+                    if (isInsideGroup) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { allowGroupPointsOverflow = !allowGroupPointsOverflow }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = allowGroupPointsOverflow,
+                                onCheckedChange = { allowGroupPointsOverflow = it },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4),
+                                    uncheckedColor = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4),
+                                    checkmarkColor = if (isDark) Color(0xFF381E72) else Color.White
+                                ),
+                                modifier = Modifier.testTag("add_goal_allow_group_overflow")
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Allow overflow of group points",
+                                    style = MaterialTheme.typography.bodyMedium.copy(color = if (isDark) Color.White else Color(0xFF1D1B20)),
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Allow contribution to group points to exceed 100% if points exceed target max.",
+                                    style = MaterialTheme.typography.bodySmall.copy(color = if (isDark) Color(0xFFCAC4D0) else Color(0xFF49454F))
+                                )
+                            }
+                        }
+                    }
                 } else if (activeTab == 1) {
                     // Types tab
                     Column(
@@ -6302,17 +7046,50 @@ fun AddGoalDialog(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Button(
-                            onClick = { showAddMilestoneDialog = true },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4),
-                                contentColor = if (isDark) Color(0xFF381E72) else Color.White
-                            ),
-                            modifier = Modifier.fillMaxWidth()
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Add Milestone")
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(20.dp))
+                                    .combinedClickable(
+                                        onClick = { showAddMilestoneDialog = true },
+                                        onLongClick = { showMultipleMilestonesDialog = true }
+                                    ),
+                                color = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4),
+                                shape = RoundedCornerShape(20.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(vertical = 12.dp, horizontal = 16.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        Icons.Default.Add,
+                                        contentDescription = null,
+                                        tint = if (isDark) Color(0xFF381E72) else Color.White,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        "+ Add Milestone",
+                                        style = MaterialTheme.typography.labelLarge.copy(
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isDark) Color(0xFF381E72) else Color.White
+                                        )
+                                    )
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "(Hold to add multiple milestones)",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    color = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4),
+                                    fontWeight = FontWeight.Medium
+                                )
+                            )
                         }
 
                         // Milestones List
@@ -6348,17 +7125,10 @@ fun AddGoalDialog(
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                val icon = when (milestone.type) {
-                                                    "star" -> Icons.Default.Star
-                                                    "line" -> Icons.Default.Menu
-                                                    "flag" -> Icons.Default.Flag
-                                                    else -> Icons.Default.Circle
-                                                }
-                                                Icon(
-                                                    imageVector = icon,
-                                                    contentDescription = null,
+                                                MilestoneIconDisplay(
+                                                    type = milestone.type,
                                                     tint = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4),
-                                                    modifier = Modifier.size(16.dp)
+                                                    modifier = Modifier.size(18.dp)
                                                 )
                                                 Spacer(modifier = Modifier.width(8.dp))
                                                 Text(
@@ -6383,6 +7153,38 @@ fun AddGoalDialog(
                                         }
                                     }
                                 }
+                            }
+                        }
+
+                        // Checkbox 0: Show milestone progress bar
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { showMilestoneProgressBar = !showMilestoneProgressBar }
+                                .padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = showMilestoneProgressBar,
+                                onCheckedChange = { showMilestoneProgressBar = it },
+                                colors = CheckboxDefaults.colors(
+                                    checkedColor = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4),
+                                    uncheckedColor = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4),
+                                    checkmarkColor = if (isDark) Color(0xFF381E72) else Color.White
+                                )
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Show milestone progress bar",
+                                    style = MaterialTheme.typography.bodyMedium.copy(color = if (isDark) Color.White else Color(0xFF1D1B20)),
+                                    fontWeight = FontWeight.Medium
+                                )
+                                Text(
+                                    text = "Renders sliced segmented milestone progress bar when milestones exist and behavior is set to next milestone (Type 3 or 4).",
+                                    style = MaterialTheme.typography.bodySmall.copy(color = if (isDark) Color(0xFFCAC4D0) else Color(0xFF49454F))
+                                )
                             }
                         }
 
@@ -6961,6 +7763,7 @@ fun AddGoalDialog(
                             barBehavior,
                             hidePassedMilestones,
                             showRemainingCount,
+                            showMilestoneProgressBar,
                             progressType,
                             meterThickness,
                             dotsPerRow,
@@ -6971,7 +7774,8 @@ fun AddGoalDialog(
                             pointTrackingEnabled,
                             statsVisualType,
                             showHighlights,
-                            gVal
+                            gVal,
+                            allowGroupPointsOverflow
                         )
                     }
                 },
@@ -7004,11 +7808,14 @@ fun AddGoalDialog(
         }
     )
 
-    // Milestone Add Dialog
+    // Milestone Add Single Dialog
     if (showAddMilestoneDialog) {
         var valueStr by remember { mutableStateOf("") }
         var selectedType by remember { mutableStateOf("dot") }
         var valError by remember { mutableStateOf(false) }
+        var isIncreaseByMode by remember { mutableStateOf(false) }
+
+        val allTypes = listOf("dot", "star", "heart", "diamond", "line", "flag", "danger", "cross")
 
         AlertDialog(
             onDismissRequest = {
@@ -7021,11 +7828,30 @@ fun AddGoalDialog(
             title = {
                 Text(
                     "Add Milestone Checkpoint",
-                    style = MaterialTheme.typography.titleMedium.copy(color = if (isDark) Color.White else Color(0xFF1D1B20))
+                    style = MaterialTheme.typography.titleMedium.copy(color = if (isDark) Color.White else Color(0xFF1D1B20)),
+                    fontWeight = FontWeight.Bold
                 )
             },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = !isIncreaseByMode,
+                            onClick = { isIncreaseByMode = false },
+                            label = { Text("Exact Value", style = MaterialTheme.typography.labelMedium) },
+                            modifier = Modifier.weight(1f)
+                        )
+                        FilterChip(
+                            selected = isIncreaseByMode,
+                            onClick = { isIncreaseByMode = true },
+                            label = { Text("Increase By (+)", style = MaterialTheme.typography.labelMedium) },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+
                     OutlinedTextField(
                         value = valueStr,
                         onValueChange = { input ->
@@ -7034,11 +7860,16 @@ fun AddGoalDialog(
                                 valError = (input.toIntOrNull() ?: 0) <= 0
                             }
                         },
-                        label = { Text("Milestone Point Value") },
-                        placeholder = { Text("e.g. 5") },
+                        label = { Text(if (isIncreaseByMode) "Increase From Previous/0 by" else "Milestone Point Value") },
+                        placeholder = { Text(if (isIncreaseByMode) "+5" else "e.g. 5") },
                         isError = valError,
                         supportingText = {
                             if (valError) Text("Must be > 0")
+                            else if (isIncreaseByMode) {
+                                val lastVal = milestonesList.maxOfOrNull { it.value } ?: 0
+                                val inc = valueStr.toIntOrNull() ?: 0
+                                if (inc > 0) Text("Will create milestone at ${lastVal + inc} pts")
+                            }
                         },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedTextColor = if (isDark) Color.White else Color(0xFF1D1B20),
@@ -7054,21 +7885,22 @@ fun AddGoalDialog(
 
                     Column {
                         Text(
-                            "Select Icon Style",
+                            "Select Icon Style (8 Styles)",
                             style = MaterialTheme.typography.titleSmall.copy(color = if (isDark) Color.White else Color(0xFF1D1B20)),
                             fontWeight = FontWeight.Medium
                         )
                         Spacer(modifier = Modifier.height(8.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            val types = listOf("dot", "star", "line", "flag")
-                            types.forEach { type ->
+                            allTypes.forEach { type ->
                                 val isSel = selectedType == type
                                 Box(
                                     modifier = Modifier
-                                        .weight(1f)
+                                        .weight(1f, fill = false)
+                                        .width(62.dp)
                                         .clip(RoundedCornerShape(8.dp))
                                         .background(
                                             if (isSel) {
@@ -7085,26 +7917,20 @@ fun AddGoalDialog(
                                             shape = RoundedCornerShape(8.dp)
                                         )
                                         .clickable { selectedType = type }
-                                        .padding(vertical = 10.dp),
+                                        .padding(vertical = 8.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        val icon = when (type) {
-                                            "star" -> Icons.Default.Star
-                                            "line" -> Icons.Default.Menu
-                                            "flag" -> Icons.Default.Flag
-                                            else -> Icons.Default.Circle
-                                        }
-                                        Icon(
-                                            imageVector = icon,
-                                            contentDescription = null,
+                                        MilestoneIconDisplay(
+                                            type = type,
                                             tint = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4),
-                                            modifier = Modifier.size(16.dp)
+                                            modifier = Modifier.size(18.dp)
                                         )
-                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Spacer(modifier = Modifier.height(2.dp))
                                         Text(
-                                            type.uppercase(),
+                                            type.take(4).uppercase(),
                                             style = MaterialTheme.typography.labelSmall.copy(
+                                                fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (isDark) Color.White else Color(0xFF1D1B20)
                                             )
@@ -7119,11 +7945,16 @@ fun AddGoalDialog(
             confirmButton = {
                 Button(
                     onClick = {
-                        val value = valueStr.toIntOrNull() ?: 0
-                        if (value > 0) {
+                        val inputVal = valueStr.toIntOrNull() ?: 0
+                        if (inputVal > 0) {
+                            val finalVal = if (isIncreaseByMode) {
+                                val lastVal = milestonesList.maxOfOrNull { it.value } ?: 0
+                                lastVal + inputVal
+                            } else inputVal
+
                             focusManager.clearFocus()
                             keyboardController?.hide()
-                            milestonesList = (milestonesList + Milestone(value, selectedType)).sortedBy { it.value }
+                            milestonesList = (milestonesList + Milestone(finalVal, selectedType)).sortedBy { it.value }
                             showAddMilestoneDialog = false
                         } else {
                             valError = true
@@ -7143,6 +7974,374 @@ fun AddGoalDialog(
                         focusManager.clearFocus()
                         keyboardController?.hide()
                         showAddMilestoneDialog = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4)
+                    )
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Milestone Add Multiple Dialog
+    if (showMultipleMilestonesDialog) {
+        var mode by remember { mutableStateOf(0) } // 0 = Incremental, 1 = In Range
+        var countStr by remember { mutableStateOf("5") }
+        var startValStr by remember { mutableStateOf("5") }
+        var stepValStr by remember { mutableStateOf("5") }
+        var eachIncreaseByStr by remember { mutableStateOf("0") }
+        var fromValStr by remember { mutableStateOf("100") }
+        var toValStr by remember { mutableStateOf((maxPointsStr.toIntOrNull() ?: 200).toString()) }
+        var weightPercent by remember { mutableStateOf(0f) } // -100% to +100%
+        var selectedType by remember { mutableStateOf("dot") }
+
+        val allTypes = listOf("dot", "star", "line", "flag", "cross", "diamond", "heart", "danger")
+
+        val generatedPreview = remember(mode, countStr, startValStr, stepValStr, eachIncreaseByStr, fromValStr, toValStr, weightPercent) {
+            val count = (countStr.toIntOrNull() ?: 0).coerceIn(1, 100)
+            if (mode == 0) {
+                val start = startValStr.toIntOrNull() ?: 0
+                val step = stepValStr.toIntOrNull() ?: 0
+                val eachInc = eachIncreaseByStr.toIntOrNull() ?: 0
+                generateIncrementalMilestones(count, start, step, eachInc)
+            } else {
+                val from = fromValStr.toIntOrNull() ?: 0
+                val to = toValStr.toIntOrNull() ?: 100
+                generateRangeMilestones(count, from, to, weightPercent)
+            }
+        }
+
+        AlertDialog(
+            onDismissRequest = {
+                focusManager.clearFocus()
+                keyboardController?.hide()
+                showMultipleMilestonesDialog = false
+            },
+            containerColor = if (isDark) Color(0xFF2C2A30) else Color(0xFFFFFFFF),
+            shape = RoundedCornerShape(20.dp),
+            title = {
+                Text(
+                    "Add multiple Milestone Checkpoints",
+                    style = MaterialTheme.typography.titleMedium.copy(color = if (isDark) Color.White else Color(0xFF1D1B20)),
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    // Mode Selector Tabs (Incremental vs In range)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { mode = 0 },
+                            color = if (mode == 0) (if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4))
+                                    else (if (isDark) Color(0xFF38353E) else Color(0xFFE8DEF8)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier.padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "Incremental",
+                                    style = MaterialTheme.typography.labelLarge.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (mode == 0) (if (isDark) Color(0xFF381E72) else Color.White)
+                                               else (if (isDark) Color.White else Color(0xFF1D1B20))
+                                    )
+                                )
+                            }
+                        }
+
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { mode = 1 },
+                            color = if (mode == 1) (if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4))
+                                    else (if (isDark) Color(0xFF38353E) else Color(0xFFE8DEF8)),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier.padding(vertical = 10.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    "In range",
+                                    style = MaterialTheme.typography.labelLarge.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (mode == 1) (if (isDark) Color(0xFF381E72) else Color.White)
+                                               else (if (isDark) Color.White else Color(0xFF1D1B20))
+                                    )
+                                )
+                            }
+                        }
+                    }
+
+                    if (mode == 0) {
+                        // Incremental Mode
+                        OutlinedTextField(
+                            value = countStr,
+                            onValueChange = { if (it.isEmpty() || it.all { c -> c.isDigit() }) countStr = it },
+                            label = { Text("# of milestones") },
+                            placeholder = { Text("1 to 100") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = startValStr,
+                            onValueChange = { if (it.isEmpty() || it.all { c -> c.isDigit() || c == '-' }) startValStr = it },
+                            label = { Text("Starting from") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = stepValStr,
+                                onValueChange = { if (it.isEmpty() || it.all { c -> c.isDigit() || c == '-' }) stepValStr = it },
+                                label = { Text("Increase by") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = eachIncreaseByStr,
+                                onValueChange = { if (it.isEmpty() || it.all { c -> c.isDigit() || c == '-' }) eachIncreaseByStr = it },
+                                label = { Text("Each increase by") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                    } else {
+                        // In Range Mode
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = fromValStr,
+                                onValueChange = { if (it.isEmpty() || it.all { c -> c.isDigit() || c == '-' }) fromValStr = it },
+                                label = { Text("From") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f)
+                            )
+                            OutlinedTextField(
+                                value = toValStr,
+                                onValueChange = { if (it.isEmpty() || it.all { c -> c.isDigit() || c == '-' }) toValStr = it },
+                                label = { Text("To") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        OutlinedTextField(
+                            value = countStr,
+                            onValueChange = { if (it.isEmpty() || it.all { c -> c.isDigit() }) countStr = it },
+                            label = { Text("# of milestones") },
+                            placeholder = { Text("1 to 100") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // Weight Distribution Slider
+                        Column {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Weight: ${if (weightPercent > 0) "+" else ""}${weightPercent.toInt()}%",
+                                    style = MaterialTheme.typography.titleSmall.copy(
+                                        color = if (isDark) Color.White else Color(0xFF1D1B20),
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                )
+                            }
+                            Slider(
+                                value = weightPercent,
+                                onValueChange = { weightPercent = it },
+                                valueRange = -100f..100f,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4),
+                                    activeTrackColor = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4)
+                                )
+                            )
+
+                            // Live Distribution Preview Bar
+                            Text(
+                                text = "Preview (${generatedPreview.size} milestones)",
+                                style = MaterialTheme.typography.labelSmall.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDark) Color.LightGray else Color.DarkGray
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(26.dp)
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(if (isDark) Color(0xFF1E1C24) else Color(0xFFE8DEF8))
+                                    .padding(horizontal = 8.dp),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                Canvas(modifier = Modifier.fillMaxSize()) {
+                                    val w = size.width
+                                    val h = size.height
+                                    val minVal = (fromValStr.toIntOrNull() ?: 0).toFloat()
+                                    val maxVal = (toValStr.toIntOrNull() ?: 100).toFloat().coerceAtLeast(minVal + 1)
+                                    
+                                    // Draw track baseline
+                                    drawLine(
+                                        color = if (isDark) Color.White.copy(alpha = 0.3f) else Color.Black.copy(alpha = 0.2f),
+                                        start = androidx.compose.ui.geometry.Offset(0f, h / 2f),
+                                        end = androidx.compose.ui.geometry.Offset(w, h / 2f),
+                                        strokeWidth = 3.dp.toPx()
+                                    )
+
+                                    // Draw milestone dots
+                                    generatedPreview.forEach { valTick ->
+                                        val frac = ((valTick - minVal) / (maxVal - minVal)).coerceIn(0f, 1f)
+                                        val x = frac * w
+                                        drawCircle(
+                                            color = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4),
+                                            radius = 4.dp.toPx(),
+                                            center = androidx.compose.ui.geometry.Offset(x, h / 2f)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Icon Style Picker (2 rows of 4)
+                    Column {
+                        Text(
+                            "Select Icon Style",
+                            style = MaterialTheme.typography.titleSmall.copy(color = if (isDark) Color.White else Color(0xFF1D1B20)),
+                            fontWeight = FontWeight.Medium
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            allTypes.forEach { type ->
+                                val isSel = selectedType == type
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f, fill = false)
+                                        .width(64.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(
+                                            if (isSel) {
+                                                if (isDark) Color(0xFF381E72) else Color(0xFFE8DEF8)
+                                            } else {
+                                                if (isDark) Color(0xFF1E1C24) else Color(0xFFF1F1F1)
+                                            }
+                                        )
+                                        .border(
+                                            width = 1.5.dp,
+                                            color = if (isSel) {
+                                                if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4)
+                                            } else Color.Transparent,
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable { selectedType = type }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        MilestoneIconDisplay(
+                                            type = type,
+                                            tint = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4),
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            type.uppercase(),
+                                            style = MaterialTheme.typography.labelSmall.copy(
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isDark) Color.White else Color(0xFF1D1B20)
+                                            )
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Preview numbers chips
+                    if (generatedPreview.isNotEmpty()) {
+                        FlowRow(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            generatedPreview.take(10).forEach { pVal ->
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isDark) Color(0xFF381E72) else Color(0xFFE8DEF8)
+                                ) {
+                                    Text(
+                                        text = "$pVal",
+                                        style = MaterialTheme.typography.labelSmall.copy(
+                                            color = if (isDark) Color(0xFFD0BCFF) else Color(0xFF381E72),
+                                            fontWeight = FontWeight.Bold
+                                        ),
+                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            if (generatedPreview.size > 10) {
+                                Text(
+                                    text = "+${generatedPreview.size - 10} more",
+                                    style = MaterialTheme.typography.labelSmall.copy(color = if (isDark) Color.LightGray else Color.DarkGray)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (generatedPreview.isNotEmpty()) {
+                            val newItems = generatedPreview.map { Milestone(it, selectedType) }
+                            milestonesList = (milestonesList + newItems).distinctBy { it.value }.sortedBy { it.value }
+                            focusManager.clearFocus()
+                            keyboardController?.hide()
+                            showMultipleMilestonesDialog = false
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4),
+                        contentColor = if (isDark) Color(0xFF381E72) else Color.White
+                    )
+                ) {
+                    Text("Add")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        focusManager.clearFocus()
+                        keyboardController?.hide()
+                        showMultipleMilestonesDialog = false
                     },
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = if (isDark) Color(0xFFD0BCFF) else Color(0xFF6750A4)
@@ -7545,12 +8744,17 @@ fun StatsOverlay(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                if (isLandscape && landscapeColumns == 2) {
-                    if (isExpanded) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(0.9f)
-                                .clickable(enabled = false, onClick = {})
+                if (isLandscape) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth(0.95f)
+                            .clickable(enabled = false, onClick = {}),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             GoalCard(
                                 goal = goal,
@@ -7561,56 +8765,33 @@ fun StatsOverlay(
                                 onHoldIncrement = {},
                                 onHoldDecrement = {},
                                 onDelete = {},
-                                outlineColorHex = inheritedBorderColor,
-                                modifier = Modifier.fillMaxWidth(0.6f)
+                                outlineColorHex = inheritedBorderColor
                             )
-                            Box(
-                                modifier = Modifier
-                                    .align(Alignment.TopEnd)
-                                    .fillMaxWidth(0.55f)
-                                    .padding(top = 16.dp)
-                            ) {
-                                StatsCard(
-                                    goal = goal,
-                                    isDark = isDark,
-                                    logs = logs,
-                                    onDismiss = onDismiss,
-                                    outlineColorHex = inheritedBorderColor,
-                                    viewModel = viewModel
-                                )
+                            if (goal.milestonesStr.isNotBlank()) {
+                                val milestones = parseMilestones(goal.milestonesStr)
+                                if (milestones.isNotEmpty()) {
+                                    val customColor = try { Color(android.graphics.Color.parseColor(goal.colorHex)) } catch (e: Exception) { Color(0xFF6750A4) }
+                                    MilestoneProgressionSection(
+                                        goal = goal,
+                                        milestones = milestones,
+                                        currentPoints = goal.currentPoints,
+                                        customColor = customColor,
+                                        isDark = isDark,
+                                        outlineColorHex = inheritedBorderColor
+                                    )
+                                }
                             }
                         }
-                    } else {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth(0.9f)
-                                .clickable(enabled = false, onClick = {}),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Box(modifier = Modifier.weight(1f)) {
-                                GoalCard(
-                                    goal = goal,
-                                    isDark = isDark,
-                                    isAnimationEnabled = false,
-                                    onIncrement = {},
-                                    onDecrement = {},
-                                    onHoldIncrement = {},
-                                    onHoldDecrement = {},
-                                    onDelete = {},
-                                    outlineColorHex = inheritedBorderColor
-                                )
-                            }
-                            Box(modifier = Modifier.weight(1f)) {
-                                StatsCard(
-                                    goal = goal,
-                                    isDark = isDark,
-                                    logs = logs,
-                                    onDismiss = onDismiss,
-                                    outlineColorHex = inheritedBorderColor,
-                                    viewModel = viewModel
-                                )
-                            }
+                        Box(modifier = Modifier.weight(1f)) {
+                            StatsCard(
+                                goal = goal,
+                                isDark = isDark,
+                                logs = logs,
+                                onDismiss = onDismiss,
+                                outlineColorHex = inheritedBorderColor,
+                                viewModel = viewModel,
+                                showMilestones = false
+                            )
                         }
                     }
                 } else {
@@ -7638,7 +8819,8 @@ fun StatsOverlay(
                             logs = logs,
                             onDismiss = onDismiss,
                             outlineColorHex = inheritedBorderColor,
-                            viewModel = viewModel
+                            viewModel = viewModel,
+                            showMilestones = true
                         )
                     }
                 }
@@ -7654,7 +8836,8 @@ fun StatsCard(
     logs: List<GoalLog>,
     onDismiss: () -> Unit,
     outlineColorHex: String? = null,
-    viewModel: GoalViewModel? = null
+    viewModel: GoalViewModel? = null,
+    showMilestones: Boolean = true
 ) {
     val customColor = try { Color(android.graphics.Color.parseColor(goal.colorHex)) } catch (e: Exception) { Color(0xFF6750A4) }
     val cardBgColor = getCardBackgroundColor(isDark, goal.secondaryColorHex)
@@ -7721,7 +8904,23 @@ fun StatsCard(
                 val sdf = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.getDefault())
                 val creationDateStr = sdf.format(java.util.Date(goal.createdAt))
 
-                val daysSinceCreation = maxOf(1L, (System.currentTimeMillis() - goal.createdAt) / (1000 * 60 * 60 * 24))
+                val daysSinceCreation = run {
+                    val calToday = java.util.Calendar.getInstance().apply {
+                        set(java.util.Calendar.HOUR_OF_DAY, 0)
+                        set(java.util.Calendar.MINUTE, 0)
+                        set(java.util.Calendar.SECOND, 0)
+                        set(java.util.Calendar.MILLISECOND, 0)
+                    }
+                    val calCreated = java.util.Calendar.getInstance().apply {
+                        timeInMillis = goal.createdAt
+                        set(java.util.Calendar.HOUR_OF_DAY, 0)
+                        set(java.util.Calendar.MINUTE, 0)
+                        set(java.util.Calendar.SECOND, 0)
+                        set(java.util.Calendar.MILLISECOND, 0)
+                    }
+                    val diffDays = ((calToday.timeInMillis - calCreated.timeInMillis) / (1000L * 60 * 60 * 24)).coerceAtLeast(0L) + 1L
+                    maxOf(1L, diffDays)
+                }
                 val averagePerDay = "%.1f".format(goal.currentPoints.toDouble() / daysSinceCreation)
 
                 val lastChangeStr = if (logs.isNotEmpty()) {
@@ -7957,9 +9156,9 @@ fun StatsCard(
                                 val chartWidth = width - paddingLeft - paddingRight
                                 val chartHeight = height - paddingTop - paddingBottom
 
-                                val maxP = maxOf(1f, finalCumulativePoints.maxOrNull() ?: 10f)
-                                val minP = minOf(0f, finalCumulativePoints.minOrNull() ?: 0f)
-                                val range = maxP - minP
+                                val minP = finalCumulativePoints.minOrNull() ?: 0f
+                                val maxP = finalCumulativePoints.maxOrNull() ?: (minP + 1f)
+                                val range = if (maxP == minP) 1f else (maxP - minP)
 
                                 drawLine(
                                     color = if (isDark) Color(0xFF49454F) else Color(0xFFCAC4D0),
@@ -8093,6 +9292,150 @@ fun StatsCard(
                             valueColor = customColor,
                             isDark = isDark
                         )
+                    }
+
+                    // Milestone Progression Section (Categorized & Priority Sorted)
+                    if (showMilestones && goal.milestonesStr.isNotBlank()) {
+                        val milestones = parseMilestones(goal.milestonesStr)
+                        if (milestones.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(6.dp))
+                            MilestoneProgressionSection(
+                                goal = goal,
+                                milestones = milestones,
+                                currentPoints = goal.currentPoints,
+                                customColor = customColor,
+                                isDark = isDark,
+                                outlineColorHex = outlineColorHex
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MilestoneProgressionSection(
+    goal: Goal,
+    milestones: List<Milestone>,
+    currentPoints: Int,
+    customColor: Color,
+    isDark: Boolean,
+    outlineColorHex: String? = null
+) {
+    val cardBgColor = getCardBackgroundColor(isDark, goal.secondaryColorHex)
+    val cardBorder = if (goal.cardBorderHex != "NONE") {
+        val strokeColor = try { Color(android.graphics.Color.parseColor(goal.cardBorderHex)) } catch (e: Exception) { customColor }
+        BorderStroke(2.dp, strokeColor)
+    } else if (outlineColorHex != null && outlineColorHex != "NONE") {
+        val strokeColor = try { Color(android.graphics.Color.parseColor(outlineColorHex)) } catch (e: Exception) { customColor }
+        BorderStroke(2.dp, strokeColor)
+    } else {
+        if (isDark) null else borderStrokeForCard(goal.secondaryColorHex)
+    }
+
+    // Group by icon type and sort groups strictly by priority:
+    // FLAG > STAR > HEART > DIAMOND > LINE > DOT > DANGER > CROSS
+    val grouped: Map<String, List<Milestone>> = milestones.groupBy { it.type.lowercase().trim() }
+    val sortedGroupKeys: List<String> = grouped.keys.sortedBy { k: String -> getMilestonePriority(k) }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = cardBgColor
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDark) 0.dp else 2.dp),
+        border = cardBorder
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Milestones Progression",
+                    style = MaterialTheme.typography.titleMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        color = if (isDark) Color.White else Color(0xFF1D1B20)
+                    )
+                )
+                val totalMilestones = milestones.size
+                val reachedMilestones = milestones.count { currentPoints >= it.value }
+                Surface(
+                    color = customColor.copy(alpha = if (isDark) 0.22f else 0.15f),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text(
+                        text = "$reachedMilestones/$totalMilestones Done",
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = customColor
+                        ),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            sortedGroupKeys.forEach { typeKey ->
+                val groupMilestones = grouped[typeKey]?.sortedBy { it.value } ?: emptyList()
+                val totalCount = groupMilestones.size
+                val achievedCount = groupMilestones.count { currentPoints >= it.value }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = getMilestoneTypeLabel(typeKey),
+                        style = MaterialTheme.typography.titleSmall.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDark) Color.White else Color(0xFF1D1B20)
+                        )
+                    )
+
+                    if (totalCount < 6) {
+                        // Shows up to 5 individual milestone icons (achieved filled, unreached dimmed)
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            groupMilestones.forEach { milestone ->
+                                val isAchieved = currentPoints >= milestone.value
+                                MilestoneIconDisplay(
+                                    type = typeKey,
+                                    tint = if (isAchieved) customColor else (if (isDark) Color(0xFF3E3A46) else Color(0xFFCAC4D0)),
+                                    size = 22.dp
+                                )
+                            }
+                        }
+                    } else {
+                        // Shows numbers instead for >= 6 milestones (e.g. 4/6 or 10/17 followed by icon)
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "$achievedCount/$totalCount",
+                                style = MaterialTheme.typography.titleMedium.copy(
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDark) Color.White else Color(0xFF1D1B20)
+                                )
+                            )
+                            MilestoneIconDisplay(
+                                type = typeKey,
+                                tint = customColor,
+                                size = 22.dp
+                            )
+                        }
                     }
                 }
             }
@@ -8264,9 +9607,11 @@ fun ResetConfirmationDialog(
 @Composable
 fun SnapshotDialog(
     onDismiss: () -> Unit,
-    onCapture: (qualityPx: Int) -> Unit
+    onCapture: (qualityPx: Int, splitParts: Int) -> Unit
 ) {
     var selectedQuality by remember { mutableStateOf(1080) }
+    var splitSnapshot by remember { mutableStateOf(false) }
+    var splitParts by remember { mutableStateOf(2) }
     
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -8313,11 +9658,67 @@ fun SnapshotDialog(
                         )
                     }
                 }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { splitSnapshot = !splitSnapshot }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Checkbox(
+                        checked = splitSnapshot,
+                        onCheckedChange = { splitSnapshot = it }
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Split snapshot into multiple PNGs",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium)
+                    )
+                }
+
+                if (splitSnapshot) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "Split into:",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Text(
+                                text = "$splitParts images",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold)
+                            )
+                        }
+                        Slider(
+                            value = splitParts.toFloat(),
+                            onValueChange = { splitParts = it.toInt() },
+                            valueRange = 2f..10f,
+                            steps = 7,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Text(
+                            text = "Splits the long snapshot document into $splitParts separate images to avoid overly long images.",
+                            style = MaterialTheme.typography.bodySmall.copy(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        )
+                    }
+                }
             }
         },
         confirmButton = {
             Button(
-                onClick = { onCapture(selectedQuality) }
+                onClick = { onCapture(selectedQuality, if (splitSnapshot) splitParts else 1) }
             ) {
                 Text("Capture & Save")
             }
@@ -8691,8 +10092,8 @@ fun FullScreenGraphDialog(
                                 }
                             }
                         } else {
-                            val maxP = maxOf(1f, finalCumulativePoints.maxOrNull() ?: 10f)
-                            val minP = minOf(0f, finalCumulativePoints.minOrNull() ?: 0f)
+                            val minP = finalCumulativePoints.minOrNull() ?: 0f
+                            val maxP = finalCumulativePoints.maxOrNull() ?: (minP + 1f)
                             val range = (maxP - minP).coerceAtLeast(1f)
 
                             val spanP = range
@@ -8981,6 +10382,402 @@ fun FullScreenGraphDialog(
     }
 }
 
+@Composable
+fun GroupFullScreenGraphDialog(
+    group: GoalGroup,
+    isDark: Boolean,
+    childGoals: List<Goal>,
+    groupLogs: List<GoalLog>,
+    selectedDaysInitial: Int,
+    ignoreInactiveDaysInitial: Boolean = false,
+    onDismiss: () -> Unit,
+    customColor: Color
+) {
+    var selectedDays by remember { mutableStateOf(selectedDaysInitial) }
+    var ignoreInactiveDays by remember { mutableStateOf(ignoreInactiveDaysInitial) }
+    var selectedIndex by remember { mutableStateOf<Int?>(null) }
+
+    val lastDays = (0 until selectedDays).reversed().map { offset ->
+        val cal = java.util.Calendar.getInstance()
+        cal.add(java.util.Calendar.DAY_OF_YEAR, -offset)
+        cal
+    }
+    val dayLabels = lastDays.map { cal ->
+        val sdfDay = java.text.SimpleDateFormat("MM/dd", java.util.Locale.US)
+        sdfDay.format(cal.time)
+    }
+
+    val currentTotalGroupPoints = if (group.displayType == 1) {
+        childGoals.sumOf {
+            if (it.maxPoints > 0) {
+                val fraction = it.currentPoints.toDouble() / it.maxPoints.toDouble()
+                if (it.allowGroupPointsOverflow) fraction * it.groupValue else minOf(it.groupValue, fraction * it.groupValue)
+            } else 0.0
+        }
+    } else {
+        childGoals.sumOf { it.currentPoints }.toDouble()
+    }
+
+    val dayValues = lastDays.map { cal ->
+        val s = (cal.clone() as java.util.Calendar).apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val e = s + 24 * 60 * 60 * 1000
+        val logsInDay = groupLogs.filter { it.timestamp in s until e }
+        logsInDay.sumOf { log ->
+            val g = childGoals.find { it.id == log.goalId }
+            if (group.displayType == 1 && g != null && g.maxPoints > 0) {
+                log.changeAmount.toDouble() * (g.groupValue / g.maxPoints.toDouble())
+            } else {
+                log.changeAmount.toDouble()
+            }
+        }
+    }
+
+    val cumulativePoints = mutableListOf<Double>()
+    var runningSum = currentTotalGroupPoints - dayValues.sum()
+    dayValues.forEach { change ->
+        runningSum += change
+        cumulativePoints.add(runningSum)
+    }
+
+    var finalDayLabels = dayLabels
+    var finalDayValues = dayValues
+    var finalCumulativePoints: List<Double> = cumulativePoints
+    var finalDays = lastDays
+
+    if (ignoreInactiveDays) {
+        val activeIndices = dayValues.indices.filter { dayValues[it] != 0.0 }
+        if (activeIndices.isNotEmpty()) {
+            val keep = mutableSetOf<Int>()
+            for (idx in activeIndices) {
+                if (idx - 1 >= 0) keep.add(idx - 1)
+                keep.add(idx)
+            }
+            val indices = keep.sorted()
+            finalDayLabels = indices.map { dayLabels[it] }
+            finalDayValues = indices.map { dayValues[it] }
+            finalCumulativePoints = indices.map { cumulativePoints[it] }
+            finalDays = indices.map { lastDays[it] }
+        } else {
+            finalDayLabels = listOf(dayLabels.lastOrNull() ?: "Today")
+            finalDayValues = listOf(0.0)
+            finalCumulativePoints = listOf(currentTotalGroupPoints)
+            finalDays = listOf(java.util.Calendar.getInstance())
+        }
+    }
+
+    val drawCount = finalDayValues.size
+
+    LaunchedEffect(drawCount) {
+        selectedIndex = drawCount - 1
+    }
+
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss,
+        properties = androidx.compose.ui.window.DialogProperties(
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false
+        )
+    ) {
+        Scaffold(
+            containerColor = if (isDark) Color(0xFF121212) else Color(0xFFF5F5F5),
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            topBar = {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Back",
+                            tint = if (isDark) Color.White else Color(0xFF1D1B20)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Text(
+                        text = "Fullscreen Stats - ${group.title}",
+                        style = MaterialTheme.typography.titleMedium.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDark) Color.White else Color(0xFF1D1B20)
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+        ) { paddingValues ->
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(paddingValues)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Period Selection Pills
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if (isDark) Color(0xFF1E1E1E) else Color(0xFFEFEFEF))
+                        .padding(4.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    val periods = listOf(7 to "7d", 14 to "14d", 30 to "30d", 90 to "3m")
+                    periods.forEach { (days, label) ->
+                        val isSelected = selectedDays == days
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(if (isSelected) customColor.copy(alpha = 0.2f) else Color.Transparent)
+                                .clickable { selectedDays = days }
+                                .padding(vertical = 10.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelMedium.copy(
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) customColor else (if (isDark) Color.White else Color(0xFF1D1B20))
+                                )
+                            )
+                        }
+                    }
+                }
+
+                Text(
+                    text = "Tap on the graph to view specific day details.",
+                    style = MaterialTheme.typography.bodyMedium.copy(color = Color.Gray),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(280.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(if (isDark) Color(0xFF1E1E1E) else Color.White)
+                        .border(
+                            width = 1.dp,
+                            color = if (isDark) Color(0xFF2C2C2C) else Color(0xFFE0E0E0),
+                            shape = RoundedCornerShape(24.dp)
+                        )
+                        .padding(16.dp)
+                ) {
+                    Canvas(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(drawCount) {
+                                detectTapGestures { offset ->
+                                    val x = offset.x
+                                    val paddingLeft = 70f
+                                    val paddingRight = 20f
+                                    val chartWidth = size.width.toFloat() - paddingLeft - paddingRight
+                                    if (drawCount > 0 && chartWidth > 0) {
+                                        val stepX = if (drawCount > 1) chartWidth / (drawCount - 1).toFloat() else chartWidth
+                                        var closestIdx = -1
+                                        var minDistance = Float.MAX_VALUE
+                                        for (i in 0 until drawCount) {
+                                            val pointX = paddingLeft + i * stepX
+                                            val dist = if (x >= pointX) x - pointX else pointX - x
+                                            if (dist < minDistance) {
+                                                minDistance = dist
+                                                closestIdx = i
+                                            }
+                                        }
+                                        if (closestIdx in 0 until drawCount && minDistance < 80f) {
+                                            selectedIndex = closestIdx
+                                        }
+                                    }
+                                }
+                            }
+                    ) {
+                        val width = size.width
+                        val height = size.height
+                        val paddingLeft = 70f
+                        val paddingRight = 20f
+                        val paddingTop = 25f
+                        val paddingBottom = 40f
+                        val chartWidth = width - paddingLeft - paddingRight
+                        val chartHeight = height - paddingTop - paddingBottom
+
+                        val minP = finalCumulativePoints.minOrNull() ?: 0.0
+                        val maxP = finalCumulativePoints.maxOrNull() ?: 1.0
+                        val rangeP = if (maxP - minP > 0.0001) (maxP - minP).toFloat() else 1f
+
+                        val textPaint = android.graphics.Paint().apply {
+                            color = if (isDark) android.graphics.Color.WHITE else android.graphics.Color.DKGRAY
+                            textSize = 28f
+                            isAntiAlias = true
+                            textAlign = android.graphics.Paint.Align.RIGHT
+                        }
+                        val centerTextPaint = android.graphics.Paint().apply {
+                            color = if (isDark) android.graphics.Color.WHITE else android.graphics.Color.DKGRAY
+                            textSize = 26f
+                            isAntiAlias = true
+                            textAlign = android.graphics.Paint.Align.CENTER
+                        }
+
+                        // Grid lines and Y-axis values
+                        val steps = 3
+                        for (i in 0..steps) {
+                            val y = paddingTop + chartHeight * (1f - i.toFloat() / steps)
+                            val value = minP + (rangeP * i.toFloat() / steps)
+                            drawLine(
+                                color = if (isDark) Color(0xFF2C2B36) else Color(0xFFEEEEEE),
+                                start = androidx.compose.ui.geometry.Offset(paddingLeft, y),
+                                end = androidx.compose.ui.geometry.Offset(width - paddingRight, y),
+                                strokeWidth = 1f
+                            )
+                            drawContext.canvas.nativeCanvas.drawText(
+                                "%.1f".format(value),
+                                paddingLeft - 10f,
+                                y + 10f,
+                                textPaint
+                            )
+                        }
+
+                        if (drawCount > 0) {
+                            val stepX = if (drawCount > 1) chartWidth / (drawCount - 1).toFloat() else chartWidth
+                            val path = androidx.compose.ui.graphics.Path()
+
+                            for (i in 0 until drawCount) {
+                                val x = paddingLeft + i * stepX
+                                val pointVal = finalCumulativePoints.getOrElse(i) { 0.0 }
+                                val normY = ((pointVal - minP).toFloat() / rangeP).coerceIn(0f, 1f)
+                                val y = paddingTop + chartHeight * (1f - normY)
+
+                                if (i == 0) {
+                                    path.moveTo(x, y)
+                                } else {
+                                    path.lineTo(x, y)
+                                }
+
+                                val isSelected = selectedIndex == i
+                                drawCircle(
+                                    color = if (isSelected) Color.White else customColor,
+                                    radius = if (isSelected) 8f else 5f,
+                                    center = androidx.compose.ui.geometry.Offset(x, y)
+                                )
+                                if (isSelected) {
+                                    drawCircle(
+                                        color = customColor,
+                                        radius = 12f,
+                                        center = androidx.compose.ui.geometry.Offset(x, y),
+                                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f)
+                                    )
+                                }
+
+                                val shouldDrawLabel = when {
+                                    drawCount <= 7 -> true
+                                    drawCount <= 14 -> i % 2 == 0
+                                    drawCount <= 30 -> i % 5 == 0
+                                    else -> i % 10 == 0
+                                }
+                                if (shouldDrawLabel && i < finalDayLabels.size) {
+                                    drawContext.canvas.nativeCanvas.drawText(
+                                        finalDayLabels[i],
+                                        x,
+                                        height - 8f,
+                                        centerTextPaint
+                                    )
+                                }
+                            }
+
+                            drawPath(
+                                path = path,
+                                color = customColor,
+                                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 4f)
+                            )
+                        }
+                    }
+                }
+
+                // Ignore Inactive Days Checkbox below chart
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { ignoreInactiveDays = !ignoreInactiveDays }
+                        .padding(vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Start
+                ) {
+                    Checkbox(
+                        checked = ignoreInactiveDays,
+                        onCheckedChange = { ignoreInactiveDays = it },
+                        colors = CheckboxDefaults.colors(checkedColor = customColor),
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "Ignore inactive days",
+                        style = MaterialTheme.typography.bodyMedium.copy(color = if (isDark) Color.White else Color(0xFF1D1B20))
+                    )
+                }
+
+                // Selected Day Details Card
+                selectedIndex?.let { idx ->
+                    if (idx in 0 until drawCount) {
+                        val dayCal = finalDays.getOrElse(idx) { java.util.Calendar.getInstance() }
+                        val sdfFull = java.text.SimpleDateFormat("MMMM dd, yyyy", java.util.Locale.US)
+                        val fullDateStr = sdfFull.format(dayCal.time)
+                        val change = finalDayValues.getOrElse(idx) { 0.0 }
+                        val cumulative = finalCumulativePoints.getOrElse(idx) { 0.0 }
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(20.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isDark) Color(0xFF1E1E1E) else Color.White
+                            ),
+                            border = BorderStroke(1.dp, if (isDark) Color(0xFF2C2C2C) else Color(0xFFE0E0E0))
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Text(
+                                    text = "Day Details",
+                                    style = MaterialTheme.typography.titleMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = customColor
+                                    )
+                                )
+
+                                StatRow(label = "Date", value = fullDateStr, isDark = isDark)
+                                StatRow(
+                                    label = "Points change",
+                                    value = "${if (change > 0) "+" else ""}%.1f".format(change),
+                                    valueColor = if (change > 0) customColor else if (change < 0) Color.Red else null,
+                                    isDark = isDark
+                                )
+                                StatRow(
+                                    label = "Total cumulative points",
+                                    value = "%.1f".format(cumulative),
+                                    isDark = isDark
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun GroupStatsDialog(
@@ -9024,6 +10821,7 @@ fun GroupStatsDialog(
     }
     var selectedDays by remember { mutableStateOf(7) }
     var ignoreInactiveDays by remember { mutableStateOf(false) }
+    var showFullScreenGraph by remember { mutableStateOf(false) }
 
     val lastDays = remember(selectedDays) {
         (0 until selectedDays).reversed().map { offset ->
@@ -9042,7 +10840,7 @@ fun GroupStatsDialog(
             childGoals.sumOf {
                 if (it.maxPoints > 0) {
                     val fraction = it.currentPoints.toDouble() / it.maxPoints.toDouble()
-                    if (it.allowExceed) fraction * it.groupValue else minOf(it.groupValue, fraction * it.groupValue)
+                    if (it.allowGroupPointsOverflow) fraction * it.groupValue else minOf(it.groupValue, fraction * it.groupValue)
                 } else 0.0
             }
         } else {
@@ -9112,8 +10910,25 @@ fun GroupStatsDialog(
         }
     }
 
-    val avgPointsPerDay = remember(finalDayValues) {
-        if (finalDayValues.isNotEmpty()) finalDayValues.sum() / finalDayValues.size else 0.0
+    val daysSinceGroupCreation = remember(group.createdAt) {
+        val calToday = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val calCreated = java.util.Calendar.getInstance().apply {
+            timeInMillis = group.createdAt
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        val diffDays = ((calToday.timeInMillis - calCreated.timeInMillis) / (1000L * 60 * 60 * 24)).coerceAtLeast(0L) + 1L
+        maxOf(1L, diffDays)
+    }
+    val avgPointsPerDay = remember(currentTotalGroupPoints, daysSinceGroupCreation) {
+        currentTotalGroupPoints / daysSinceGroupCreation.toDouble()
     }
     val avgPointsStr = remember(avgPointsPerDay) {
         String.format(java.util.Locale.US, "%.1f", avgPointsPerDay.coerceAtLeast(0.0))
@@ -9267,13 +11082,30 @@ fun GroupStatsDialog(
                                 isDark = isDark
                             )
 
-                            Text(
-                                text = "Cumulative Trend (Graph)",
-                                style = MaterialTheme.typography.titleSmall.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isDark || isBrighterText) Color.White else Color(0xFF1D1B20)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Cumulative Trend (Graph)",
+                                    style = MaterialTheme.typography.titleSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isDark || isBrighterText) Color.White else Color(0xFF1D1B20)
+                                    )
                                 )
-                            )
+                                IconButton(
+                                    onClick = { showFullScreenGraph = true },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ZoomIn,
+                                        contentDescription = "Zoom Graph",
+                                        tint = customColor,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
 
                             GroupStatsGraph(
                                 finalCumulativePoints = finalCumulativePoints,
@@ -9441,13 +11273,30 @@ fun GroupStatsDialog(
                                 isDark = isDark
                             )
 
-                            Text(
-                                text = "Cumulative Trend (Graph)",
-                                style = MaterialTheme.typography.titleSmall.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isDark || isBrighterText) Color.White else Color(0xFF1D1B20)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Cumulative Trend (Graph)",
+                                    style = MaterialTheme.typography.titleSmall.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isDark || isBrighterText) Color.White else Color(0xFF1D1B20)
+                                    )
                                 )
-                            )
+                                IconButton(
+                                    onClick = { showFullScreenGraph = true },
+                                    modifier = Modifier.size(36.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.ZoomIn,
+                                        contentDescription = "Zoom Graph",
+                                        tint = customColor,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+                            }
 
                             GroupStatsGraph(
                                 finalCumulativePoints = finalCumulativePoints,
@@ -9535,6 +11384,19 @@ fun GroupStatsDialog(
                     }
                 }
             }
+        }
+
+        if (showFullScreenGraph) {
+            GroupFullScreenGraphDialog(
+                group = group,
+                isDark = isDark,
+                childGoals = childGoals,
+                groupLogs = groupLogs,
+                selectedDaysInitial = selectedDays,
+                ignoreInactiveDaysInitial = ignoreInactiveDays,
+                onDismiss = { showFullScreenGraph = false },
+                customColor = customColor
+            )
         }
     }
 }
@@ -9657,8 +11519,8 @@ private fun GroupStatsGraph(
         )
 
         if (drawCount > 0) {
-            val maxP = maxOf(1.0, finalCumulativePoints.maxOrNull() ?: 1.0)
-            val minP = minOf(0.0, finalCumulativePoints.minOrNull() ?: 0.0)
+            val minP = finalCumulativePoints.minOrNull() ?: 0.0
+            val maxP = finalCumulativePoints.maxOrNull() ?: (minP + 1.0)
             val range = if (maxP == minP) 1.0 else (maxP - minP)
 
             val points = (0 until drawCount).map { i ->
@@ -9805,13 +11667,12 @@ private fun IndividualGoalsContributionSection(
                     val textVal = if (isPointsTracking) {
                         val contribution = if (goalItem.maxPoints > 0) {
                             val fraction = goalItem.currentPoints.toDouble() / goalItem.maxPoints.toDouble()
-                            if (goalItem.allowExceed) fraction * goalItem.groupValue else minOf(goalItem.groupValue, fraction * goalItem.groupValue)
+                            if (goalItem.allowGroupPointsOverflow) fraction * goalItem.groupValue else minOf(goalItem.groupValue, fraction * goalItem.groupValue)
                         } else 0.0
                         if (contribution == 0.0) "0" else String.format(java.util.Locale.US, "%.1f", contribution)
                     } else {
                         val pct = if (goalItem.maxPoints > 0) {
-                            val raw = ((goalItem.currentPoints.toDouble() / goalItem.maxPoints.toDouble()) * 100).toInt()
-                            if (goalItem.allowExceed) raw else raw.coerceAtMost(100)
+                            ((goalItem.currentPoints.toDouble() / goalItem.maxPoints.toDouble()) * 100).toInt()
                         } else 0
                         "$pct%"
                     }

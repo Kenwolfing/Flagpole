@@ -17,6 +17,7 @@ data class Goal(
     val barBehavior: Int = 0,
     val hidePassedMilestones: Boolean = false,
     val showRemainingCount: Boolean = true,
+    val showMilestoneProgressBar: Boolean = true,
     val parentGroupId: Int = 0,
     val progressType: Int = 0, // 0 = bar, 1 = meter, 2 = big dots
     val meterThickness: Float = 14f,
@@ -29,5 +30,6 @@ data class Goal(
     val statsVisualType: Int = 0, // 0 = bar, 1 = graph/line
     val showHighlights: Boolean = true,
     val groupValue: Double = 1.0,
+    val allowGroupPointsOverflow: Boolean = true,
     val createdAt: Long = System.currentTimeMillis()
 )

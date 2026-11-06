@@ -404,6 +404,7 @@ class GoalViewModel(application: Application) : AndroidViewModel(application) {
         barBehavior: Int,
         hidePassedMilestones: Boolean,
         showRemainingCount: Boolean,
+        showMilestoneProgressBar: Boolean = true,
         progressType: Int = 0,
         meterThickness: Float = 14f,
         dotsPerRow: Int = 8,
@@ -415,7 +416,8 @@ class GoalViewModel(application: Application) : AndroidViewModel(application) {
         pointTrackingEnabled: Boolean = true,
         statsVisualType: Int = 0,
         showHighlights: Boolean = true,
-        groupValue: Double = 1.0
+        groupValue: Double = 1.0,
+        allowGroupPointsOverflow: Boolean = true
     ) {
         viewModelScope.launch {
             val finalMax = maxOf(1, maxPoints)
@@ -432,6 +434,7 @@ class GoalViewModel(application: Application) : AndroidViewModel(application) {
                 barBehavior = barBehavior,
                 hidePassedMilestones = hidePassedMilestones,
                 showRemainingCount = showRemainingCount,
+                showMilestoneProgressBar = showMilestoneProgressBar,
                 progressType = progressType,
                 meterThickness = meterThickness,
                 dotsPerRow = dotsPerRow,
@@ -443,7 +446,8 @@ class GoalViewModel(application: Application) : AndroidViewModel(application) {
                 pointTrackingEnabled = pointTrackingEnabled,
                 statsVisualType = statsVisualType,
                 showHighlights = showHighlights,
-                groupValue = groupValue
+                groupValue = groupValue,
+                allowGroupPointsOverflow = allowGroupPointsOverflow
             )
             val goalId = repository.insert(goal).toInt()
             if (finalCurrent > 0 && statsEnabled && pointTrackingEnabled) {
@@ -1041,6 +1045,7 @@ class GoalViewModel(application: Application) : AndroidViewModel(application) {
                                         put("statsVisualType", g.statsVisualType)
                                         put("showHighlights", g.showHighlights)
                                         put("groupValue", g.groupValue)
+                                        put("allowGroupPointsOverflow", g.allowGroupPointsOverflow)
                                         put("isExpanded", _expandedItemIds.value.contains("goal_${g.id}"))
                                         put("createdAt", g.createdAt)
                                     })
@@ -1127,7 +1132,7 @@ class GoalViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun importBackup(uri: Uri, onSuccess: () -> Unit, onError: (String) -> Unit) {
+    fun importBackup(uri: Uri, replaceAll: Boolean = true, onSuccess: () -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
             val restoredExpandedItems = mutableSetOf<String>()
             try {
@@ -1170,55 +1175,61 @@ class GoalViewModel(application: Application) : AndroidViewModel(application) {
 
                     val json = org.json.JSONObject(jsonString!!)
                     
-                    // 1. Process settings
-                    val settingsObj = json.optJSONObject("settings")
-                    if (settingsObj != null) {
-                        val isDark = settingsObj.optBoolean("is_dark_theme", false)
-                        val columns = settingsObj.optInt("landscape_columns", 1)
-                        val animEnabled = settingsObj.optBoolean("is_animation_enabled", true)
-                        val aestheticEnabled = settingsObj.optBoolean("is_aesthetic_dashboard_enabled", true)
-                        val animDuration = settingsObj.optInt("animation_duration_seconds", 3)
-                        val animEasing = settingsObj.optInt("animation_easing_type", 2)
-                        
-                        _isDarkTheme.value = isDark
-                        _landscapeColumns.value = columns
-                        _isAnimationEnabled.value = animEnabled
-                        _isAestheticDashboardEnabled.value = aestheticEnabled
-                        _animationDurationSeconds.value = animDuration
-                        _animationEasingType.value = animEasing
+                    // 1. Process settings (only if replacing all)
+                    if (replaceAll) {
+                        val settingsObj = json.optJSONObject("settings")
+                        if (settingsObj != null) {
+                            val isDark = settingsObj.optBoolean("is_dark_theme", false)
+                            val columns = settingsObj.optInt("landscape_columns", 1)
+                            val animEnabled = settingsObj.optBoolean("is_animation_enabled", true)
+                            val aestheticEnabled = settingsObj.optBoolean("is_aesthetic_dashboard_enabled", true)
+                            val animDuration = settingsObj.optInt("animation_duration_seconds", 3)
+                            val animEasing = settingsObj.optInt("animation_easing_type", 2)
+                            
+                            _isDarkTheme.value = isDark
+                            _landscapeColumns.value = columns
+                            _isAnimationEnabled.value = animEnabled
+                            _isAestheticDashboardEnabled.value = aestheticEnabled
+                            _animationDurationSeconds.value = animDuration
+                            _animationEasingType.value = animEasing
 
-                        val editor = prefs.edit()
-                        editor.clear()
-                        editor.putBoolean("is_dark_theme", isDark)
-                        editor.putInt("landscape_columns", columns)
-                        editor.putBoolean("is_animation_enabled", animEnabled)
-                        editor.putBoolean("is_aesthetic_dashboard_enabled", aestheticEnabled)
-                        editor.putInt("animation_duration_seconds", animDuration)
-                        editor.putInt("animation_easing_type", animEasing)
-                        
-                        val bgUri = settingsObj.optString("dashboard_background_uri", "")
-                        if (bgUri.isNotEmpty()) {
-                            val filename = bgUri.substringAfterLast("/")
-                            val newFile = File(imagesDir, filename)
-                            if (newFile.exists()) {
-                                val localUri = Uri.fromFile(newFile).toString()
-                                _dashboardBackgroundUri.value = localUri
-                                editor.putString("dashboard_background_uri", localUri)
+                            val editor = prefs.edit()
+                            editor.clear()
+                            editor.putBoolean("is_dark_theme", isDark)
+                            editor.putInt("landscape_columns", columns)
+                            editor.putBoolean("is_animation_enabled", animEnabled)
+                            editor.putBoolean("is_aesthetic_dashboard_enabled", aestheticEnabled)
+                            editor.putInt("animation_duration_seconds", animDuration)
+                            editor.putInt("animation_easing_type", animEasing)
+                            
+                            val bgUri = settingsObj.optString("dashboard_background_uri", "")
+                            if (bgUri.isNotEmpty()) {
+                                val filename = bgUri.substringAfterLast("/")
+                                val newFile = File(imagesDir, filename)
+                                if (newFile.exists()) {
+                                    val localUri = Uri.fromFile(newFile).toString()
+                                    _dashboardBackgroundUri.value = localUri
+                                    editor.putString("dashboard_background_uri", localUri)
+                                }
                             }
+                            editor.apply()
                         }
-                        editor.apply()
+
+                        // Clear Database
+                        repository.deleteAllGoals()
+                        repository.deleteAllNotes()
+                        repository.deleteAllGroups()
                     }
 
-                    // 2. Clear Database
-                    repository.deleteAllGoals()
-                    repository.deleteAllNotes()
-                    repository.deleteAllGroups()
+                    val groupIdMap = mutableMapOf<Int, Int>()
 
-                    // 3. Restore GoalGroups
+                    // 2. Restore GoalGroups
                     val groupsArray = json.optJSONArray("groups")
                     if (groupsArray != null) {
                         for (i in 0 until groupsArray.length()) {
                             val obj = groupsArray.getJSONObject(i)
+                            val oldId = obj.optInt("id")
+                            val oldParentId = obj.optInt("parentGroupId", 0)
                             
                             // Map old imageUri to new local path if present
                             var imgUri: String? = if (obj.isNull("imageUri")) null else obj.optString("imageUri")
@@ -1232,8 +1243,10 @@ class GoalViewModel(application: Application) : AndroidViewModel(application) {
                                 imgUri = null
                             }
 
+                            val mappedParentId = if (replaceAll) oldParentId else (if (oldParentId != 0) groupIdMap[oldParentId] ?: 0 else 0)
+
                             val group = GoalGroup(
-                                id = obj.optInt("id"),
+                                id = if (replaceAll) oldId else 0,
                                 title = obj.optString("title"),
                                 description = obj.optString("description"),
                                 colorHex = obj.optString("colorHex", "#6750A4"),
@@ -1241,23 +1254,29 @@ class GoalViewModel(application: Application) : AndroidViewModel(application) {
                                 imageUri = imgUri,
                                 applyBg = obj.optBoolean("applyBg", true),
                                 outlineMainColor = obj.optBoolean("outlineMainColor", false),
-                                parentGroupId = obj.optInt("parentGroupId", 0),
+                                parentGroupId = mappedParentId,
                                 cardBorderHex = obj.optString("cardBorderHex", "NONE"),
                                 displayType = obj.optInt("displayType", 0),
                                 createdAt = obj.optLong("createdAt", System.currentTimeMillis())
                             )
-                            repository.insertGroup(group)
+                            val newGroupId = repository.insertGroup(group).toInt()
+                            if (!replaceAll) {
+                                groupIdMap[oldId] = newGroupId
+                            }
                         }
                     }
 
-                    // 4. Restore Goals
+                    // 3. Restore Goals
                     val goalsArray = json.optJSONArray("goals")
                     if (goalsArray != null) {
                         for (i in 0 until goalsArray.length()) {
                             val obj = goalsArray.getJSONObject(i)
-                            val goalId = obj.optInt("id")
+                            val oldId = obj.optInt("id")
+                            val oldParentId = obj.optInt("parentGroupId", 0)
+                            val mappedParentId = if (replaceAll) oldParentId else (if (oldParentId != 0) groupIdMap[oldParentId] ?: 0 else 0)
+
                             val goal = Goal(
-                                id = goalId,
+                                id = if (replaceAll) oldId else 0,
                                 title = obj.optString("title"),
                                 description = obj.optString("description"),
                                 currentPoints = obj.optInt("currentPoints"),
@@ -1269,7 +1288,7 @@ class GoalViewModel(application: Application) : AndroidViewModel(application) {
                                 barBehavior = obj.optInt("barBehavior", 0),
                                 hidePassedMilestones = obj.optBoolean("hidePassedMilestones", false),
                                 showRemainingCount = obj.optBoolean("showRemainingCount", true),
-                                parentGroupId = obj.optInt("parentGroupId", 0),
+                                parentGroupId = mappedParentId,
                                 progressType = obj.optInt("progressType", 0),
                                 meterThickness = obj.optDouble("meterThickness", 14.0).toFloat(),
                                 dotsPerRow = obj.optInt("dotsPerRow", 8),
@@ -1281,20 +1300,25 @@ class GoalViewModel(application: Application) : AndroidViewModel(application) {
                                 statsVisualType = obj.optInt("statsVisualType", 0),
                                 showHighlights = obj.optBoolean("showHighlights", true),
                                 groupValue = obj.optDouble("groupValue", 1.0),
+                                allowGroupPointsOverflow = obj.optBoolean("allowGroupPointsOverflow", true),
                                 createdAt = obj.optLong("createdAt", System.currentTimeMillis())
                             )
-                            repository.insert(goal)
+                            val newGoalId = repository.insert(goal).toInt()
+                            val keyId = if (replaceAll) oldId else newGoalId
                             if (obj.optBoolean("isExpanded", false)) {
-                                restoredExpandedItems.add("goal_$goalId")
+                                restoredExpandedItems.add("goal_$keyId")
                             }
                         }
                     }
 
-                    // 5. Restore Notes
+                    // 4. Restore Notes
                     val notesArray = json.optJSONArray("notes")
                     if (notesArray != null) {
                         for (i in 0 until notesArray.length()) {
                             val obj = notesArray.getJSONObject(i)
+                            val oldId = obj.optInt("id")
+                            val oldParentId = obj.optInt("parentGroupId", 0)
+                            val mappedParentId = if (replaceAll) oldParentId else (if (oldParentId != 0) groupIdMap[oldParentId] ?: 0 else 0)
                             
                             var imgUri: String? = if (obj.isNull("imageUri")) null else obj.optString("imageUri")
                             if (imgUri != null && imgUri != "null" && imgUri.isNotEmpty()) {
@@ -1308,13 +1332,13 @@ class GoalViewModel(application: Application) : AndroidViewModel(application) {
                             }
 
                             val note = Note(
-                                id = obj.optInt("id"),
+                                id = if (replaceAll) oldId else 0,
                                 text = obj.optString("text"),
                                 textSize = obj.optDouble("textSize", 14.0).toFloat(),
                                 colorHex = obj.optString("colorHex", "#6750A4"),
                                 secondaryColorHex = obj.optString("secondaryColorHex", "DEFAULT"),
                                 imageUri = imgUri,
-                                parentGroupId = obj.optInt("parentGroupId", 0),
+                                parentGroupId = mappedParentId,
                                 cardBorderHex = obj.optString("cardBorderHex", "NONE"),
                                 createdAt = obj.optLong("createdAt", System.currentTimeMillis())
                             )
@@ -1322,9 +1346,13 @@ class GoalViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                 }
-                if (restoredExpandedItems.isNotEmpty()) {
+                if (replaceAll && restoredExpandedItems.isNotEmpty()) {
                     prefs.edit().putStringSet("expanded_items", restoredExpandedItems).apply()
                     _expandedItemIds.value = restoredExpandedItems
+                } else if (!replaceAll && restoredExpandedItems.isNotEmpty()) {
+                    val merged = _expandedItemIds.value.toMutableSet().apply { addAll(restoredExpandedItems) }
+                    prefs.edit().putStringSet("expanded_items", merged).apply()
+                    _expandedItemIds.value = merged
                 }
                 withContext(Dispatchers.Main) {
                     onSuccess()
