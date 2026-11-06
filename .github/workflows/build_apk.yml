@@ -3,7 +3,7 @@ name: Build Android APK
 on:
   push:
     branches: [ "main", "master" ]
-  workflow_dispatch: # สร้างปุ่มกดสั่ง Build ด้วยตัวเองได้ทุกเมื่อ
+  workflow_dispatch: # Allows manual trigger from the Actions tab anytime
 
 jobs:
   build:
@@ -19,17 +19,33 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
 
+    # Decode debug.keystore if base64 file exists, or generate one
+    - name: Prepare Debug Keystore
+      run: |
+        if [ -f "debug.keystore.base64" ]; then
+          base64 -d debug.keystore.base64 > debug.keystore
+        elif [ ! -f "debug.keystore" ]; then
+          keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+        fi
+
+    # Sets up Gradle and automatically generates the Gradle wrapper if missing
     - name: Setup Gradle
       uses: gradle/actions/setup-gradle@v3
 
-    - name: Make gradlew executable
-      run: chmod +x gradlew
+    # Generate gradlew wrapper script if the repository doesn't have it tracked
+    - name: Ensure Gradle Wrapper
+      run: |
+        if [ ! -f "gradlew" ]; then
+          gradle wrapper
+        fi
+        chmod +x gradlew
 
     - name: Build Debug APK
-      run: ./gradlew assembleDebug
+      run: ./gradlew assembleDebug --no-daemon
 
     - name: Upload APK Artifact
       uses: actions/upload-artifact@v4
       with:
         name: app-debug
-        path: app/build/outputs/apk/debug/app-debug.apk
+        path: app/build/outputs/apk/debug/*.apk
+        retention-days: 14
